@@ -1,0 +1,13 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Secrets must never be committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
