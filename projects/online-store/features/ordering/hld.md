@@ -1,6 +1,6 @@
 # Cart & Checkout - High-Level Design
 
-**Status:** Draft v0.5 - agreed in design review; round-3 fixes 2026-11-22 for review · **Owner:** Commerce team · **Last updated:** 2026-11-22
+**Status:** Draft v0.6 - agreed in design review; round-3 fixes and checkout decisions (D18) 2026-11-22 for review · **Owner:** Commerce team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults) · **Decisions:** [design review log §6, §10](../../design-review-log.md#10-ordering-full-review)
 
 ## 1. Summary
@@ -85,7 +85,7 @@ All customer routes go through the BFF (`/api/ordering/...`); the customer ID co
 | Method + path | Purpose |
 |---|---|
 | `GET /fees?city=BLR` (public, no auth; CloudFront behaviour `/api/ordering/fees`, cached 60 s) | `{deliveryFeePaise, freeDeliveryFromPaise, platformFeePaise, version}` for the cart page |
-| `POST /checkout/preview` `{addressId, storeId, lines}` | Live check: each line `OK` / `ONLY_N_LEFT` / `UNAVAILABLE`, subtotal, savings, fees, total, "add ₹X for free delivery". Reserves nothing |
+| `POST /checkout/preview` `{addressId, storeId, lines}` | Live check. **The store is worked out first** (Store Network's choice rule, cart's store as `keepStoreId`); if another store now serves the address, the answer has `storeChanged: true` and the new `storeId`, and every line is checked **at that store** in the same call (D18). Each line `OK` / `ONLY_N_LEFT` / `UNAVAILABLE` (no stock or not sold there: both shown as "Out of stock"), delivery estimate, subtotal, savings, fees, total, "add ₹X for free delivery". Reserves nothing |
 | `POST /checkout` `{addressId, storeId, lines, expectedTotalPaise}` + `Idempotency-Key` | Place the order → 201 `{order}` (lines with status, `adjustments`) or 409/422/503 with reasons |
 | `GET /orders?cursor=` · `GET /orders/{orderId}` | My orders and their timeline (404 if not mine) |
 | `GET /internal/orders/{orderId}?userId=` · `GET /internal/users/{userId}/orders` (IAM) | For Support; ownership enforced |
@@ -95,10 +95,10 @@ All customer routes go through the BFF (`/api/ordering/...`); the customer ID co
 | Code | Status | `error.details` | UI action |
 |---|---|---|---|
 | `TOTAL_CHANGED` | 409 | `{previousTotalPaise, totalPaise, changes: [{productId?, field: price/deliveryFee/platformFee, fromPaise, toPaise}]}` | Show each change; customer confirms the new total |
-| `OUT_OF_STOCK` | 409 | `{lines: [{productId, requestedQty, availableQty}]}` | Lower or remove those lines in one tap |
-| `ITEM_UNAVAILABLE` | 409 | `{lines: [{productId, reason: NOT_LISTED/INACTIVE/NOT_SOLD_HERE}]}` (covers Inventory's `NOT_SOLD_HERE`) | Remove them |
-| `STORE_CHANGED` | 409 | `{expectedStoreId, storeId}`: the cart's store no longer serves this address now, and another store that is open now does | Shell re-runs serviceability and switches to that store; cart moves (ORD-02) |
-| `STORE_UNAVAILABLE` | 409 | `{reason: OUTSIDE_HOURS / PAUSED / NOT_SERVED, opensAt?}`: `OUTSIDE_HOURS` = the cart's store is `OPEN` but closed now and no store in range is open now (`opensAt`, UTC instant, only with this reason); `PAUSED` = no store in range is taking orders; `NOT_SERVED` = no store delivers to this address. Mapped from Store Network's answer ([Store Network HLD §7](../store-network/hld.md#7-interfaces)) | `OUTSIDE_HOURS`: "Closed now. Opens at 7:00 AM", cart kept · `PAUSED`: "Try another address" · `NOT_SERVED`: "Change address" |
+| `OUT_OF_STOCK` | 409 | `{lines: [{productId, requestedQty, availableQty}]}` | "Only N left" lowers the quantity; "Out of stock" lines are left out; the customer orders the rest |
+| `ITEM_UNAVAILABLE` | 409 | `{lines: [{productId, reason: NOT_LISTED/INACTIVE/NOT_SOLD_HERE}]}` (covers Inventory's `NOT_SOLD_HERE`) | Shown as "Out of stock" (customers don't see stores) and left out of the order |
+| `STORE_CHANGED` | 409 | `{expectedStoreId, storeId}`: the cart's store no longer serves this address now, and another store that is open now does | Place order only (the preview switches the store itself): the shell switches to that store, the cart moves (ORD-02) and a fresh preview shows what changed |
+| `STORE_UNAVAILABLE` | 409 | `{reason: OUTSIDE_HOURS / PAUSED / NOT_SERVED, opensAt?}`: `OUTSIDE_HOURS` = the cart's store is `OPEN` but closed now and no store in range is open now (`opensAt`, UTC instant, only with this reason); `PAUSED` = no store in range is taking orders; `NOT_SERVED` = no store delivers to this address. Mapped from Store Network's answer ([Store Network HLD §7](../store-network/hld.md#7-interfaces)) | `OUTSIDE_HOURS`: "We're closed right now. Delivery from 7:00 AM", cart kept · `PAUSED`: "Try another address" · `NOT_SERVED`: "Change address" |
 | `LIMIT_EXCEEDED` | 422 | `{maxLines: 35}` or `{lines: [{productId, maxPerOrder}]}` | The cart module prevents it; shown only if bypassed |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | same key, different body | Client bug; new key |
 | `BUSY` | 503 + `Retry-After: 2` | Inventory still busy after its own retry | One automatic retry with the same key, then "Try again" |
@@ -116,9 +116,14 @@ result is saved; after a 409/422 the same key + body runs the checks again. Keys
 **8.1 Three checkpoints**
 ```
 ① cart page        Catalog ?ids= lookup (public, ≤ 60 s old): prices, badges, caps quantities
-② checkout page    POST /checkout/preview: Identity + Store Network + Catalog + Inventory (live, parallel)
+② checkout page    POST /checkout/preview: Identity -> Store Network (store switched here if needed),
+                   then Catalog + Inventory at that store (live, parallel)
 ③ place order      POST /checkout: same checks again + Inventory reserve -> CONFIRMED
 ```
+**Checkout page rules (D18):** out-of-stock lines stay visible, greyed and out of the total, with
+"Remove out-of-stock items"; Place order sends only the available lines. No store open now →
+"We're closed right now. Delivery from 7:00 AM. Your cart is saved." and Place order is disabled.
+Store names are never shown ([UX design §5](../../ux-design.md#5-cart-and-checkout)).
 **8.2 Place order (crash-safe)**
 ```
 deadline = now + 8 s, passed to every call (each call's timeout = min(its own, time left))
@@ -220,3 +225,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | 2026-11-21 | v0.3 (design review fixes): public fees endpoint; 409 bodies say what changed; Idempotency-Key lifecycle (only 201 saved); ownership check on order-write conflicts; timeout budget with an 8 s deadline; Catalog called in parallel; cart module owns the cart; `adjustments` on orders; status endpoint for Inventory | [Design review log §12](../../design-review-log.md#12-design-review-fixes) | Agreed 2026-11-21 |
 | 2026-11-21 | v0.4 (round-2 fixes): best-effort release of the reservation on any error after it was made ("nothing written" corrected); `STORE_UNAVAILABLE` reasons `OUTSIDE_HOURS` / `PAUSED` / `CLOSED`, `opensAt` only for `OUTSIDE_HOURS` | [Design review log §13](../../design-review-log.md#13-design-review-fixes-round-2) (BE-9, BE-12) | Applied 2026-11-21, for review |
 | 2026-11-22 | v0.5 (round-3 fixes): store check uses Store Network's choice rule with the cart's store as `keepStoreId`; `STORE_UNAVAILABLE` reasons `OUTSIDE_HOURS` / `PAUSED` / `NOT_SERVED` (`CLOSED` could never be returned: a shut store is never in the answer); latency target for warm requests, cold starts measured separately, no provisioned concurrency; fee changes by an operator script with history; `clear` in the cart-module list | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (D11, M-14, L-15, L-16) | Applied 2026-11-22, for review |
+| 2026-11-22 | v0.6: the preview works out the store first and checks every line at the new store in the same call (`storeChanged`); out-of-stock and not-sold lines both shown as "Out of stock" and left out, the customer orders the rest; delivery estimate in the preview; copy without store names | [log §16](../../design-review-log.md#16-catalog-lld-walkthrough-and-customer-store-decisions) (D16-D18) | Applied 2026-11-22, for review |

@@ -130,8 +130,8 @@ the BFF's role can read (SSM SecureString). No PITR on sessions: losing them onl
 next refresh (within an hour); the session that made the change copies it at once from the response.
 
 **In the browser** (owned by the shell): the **active delivery location**
-`{addressId | null, lat, lng, storeId, storeName, city, cityName, checkedAt}` in localStorage, all
-from the serviceability answer. The serving store is **not** saved on the address: it is looked up
+`{addressId | null, lat, lng, storeId, city, cityName, delivery, opensAt, checkedAt}` in localStorage, all
+from the serviceability answer (`storeId` is used only in API calls and never shown, D17). The serving store is **not** saved on the address: it is looked up
 when an address is chosen, on app open and when an API reports the store unavailable; checkout checks
 the cart's store on the server with the same choice rule ([Store Network HLD §5](../store-network/hld.md#5-architecture)).
 The shell sends its active store as `keepStoreId`, except when the customer chooses a new location or
@@ -174,7 +174,7 @@ Browser GET /api/identity/me/addresses (cookie) -> BFF: session -> token valid f
 **8.3 Guest becomes a customer at checkout**
 ```
 guest: current location (browser permission) or a map pin placed by tap or keyboard
- -> serviceability -> store + distanceM ("Delivering from Koramangala store, 1.2 km")
+ -> serviceability -> store + delivery estimate ("We deliver here · about 10–15 min")
  -> browse -> cart (browser) -> "Checkout" -> 401 from the BFF
  -> /api/auth/login?returnTo=/checkout -> sign in / sign up -> back to /checkout
  -> the current location is saved as an address (flat/house and building, area, landmark, recipient) -> checkout preview
@@ -244,3 +244,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | 2026-11-21 | v0.4 (round-2 fixes): OAC verified with the body-hash header; the BFF is not behind API Gateway, so reserved concurrency (or an HTTP API in front) protects it; login rows created by a public route noted, cookie option for the LLD; telemetry route for browser errors; sign-out clears the cart on the device | [Design review log §13](../../design-review-log.md#13-design-review-fixes-round-2) (BE-8, BE-10, FE-13, UX-11) | Applied 2026-11-21, for review |
 | 2026-11-22 | v0.5 (round-3 fixes): single-flight token refresh (claim on `refreshVersion`; a session is deleted only if it still holds the failed refresh token; rotation grace period); BFF reserved concurrency sized at 40, 429 handled; BFF alarm on its own overhead, not upstream time; exact `returnTo` rule; session name kept current; address fields aligned with the UX form (`line1`, `line2`, `area`, city from the store); active location carries `city`/`cityName` and sends `keepStoreId`; admin routes IAM-only for operator scripts | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (H-4, M-1, M-2, M-12, M-15, L-13, L-14, L-15, D10, D11) | Applied 2026-11-22, for review |
 | 2026-11-22 | v0.5 AWS checks: the account's Lambda limit was 10, so an increase to 1,000 was requested before the BFF cap can be set (D14), with the D6 fallback if less is granted; the cap is raised in `dev` for load tests; refreshes go through the token endpoint (rotation rules out `REFRESH_TOKEN_AUTH`); default email 50 a day; Essentials price | [Design review log §15](../../design-review-log.md#15-aws-checks) (D6, D14) | Applied 2026-11-22, for review |
+| 2026-11-22 | v0.5: the saved active location drops `storeName` and keeps the delivery estimate (store names are never shown) | [log §16](../../design-review-log.md#16-catalog-lld-walkthrough-and-customer-store-decisions) (D17) | Applied 2026-11-22, for review |

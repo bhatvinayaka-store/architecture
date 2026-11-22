@@ -403,3 +403,23 @@ disconnected. No resources were created. One request was sent to AWS: the Lambda
 **Not checked yet:** SnapStart with Spring Boot 3 priming and the BFF cold start (early in
 development); the first Claude call and the Knowledge Base storage price (Support LLD); SES
 production access on the Free plan (before R3); WAF pricing (when WAF is added).
+
+## 16. Catalog LLD walkthrough and customer-store decisions
+2026-11-22: a walkthrough of the Catalog LLD v0.4 found five gaps and one typo, and your questions
+about closed stores and checkout led to three decisions. All applied the same day.
+
+| # | Question | Decision | Where |
+|---|---|---|---|
+| D16 | Which store does a customer see when no store in range is open now? | **The `OPEN` store that opens soonest** (nearest wins a tie), shown as "Temporarily closed · Delivery from 7:00 AM"; customers browse and fill a cart, and order once it opens. A cart with items keeps its store (no move at night or at opening time, D11). Only paused stores → "Temporarily closed. Please check back soon." Your decision 2026-11-22 | [Store Network HLD §5](features/store-network/hld.md#5-architecture), §8.5; [UX design §4](ux-design.md#4-state-matrix) |
+| D17 | Should customers see which store serves them? | **No.** No store names or distances anywhere; customers see an approximate delivery time ("about 10–15 min"): the store's `prepMinutes` (default 8) + 4 min per km, rounded up to a 5-minute range; nothing open → "Delivery from 7:00 AM". Serviceability returns only the serving store (used in API calls), its opening status and the estimate. Live ETA comes with Fulfillment. Your decision 2026-11-22 | [Store Network HLD §5, §7](features/store-network/hld.md#7-interfaces); [UX design §3](ux-design.md#3-location-picker); Identity HLD |
+| D18 | What happens when the customer opens checkout? | **The preview works out the store first** (closed or paused → the nearest store open now) and checks every line **at that store** in the same call. Missing items (no stock, or not sold at the new store) are shown as "Out of stock", greyed and left out of the total; "Only N left" lowers the quantity; the customer can order the rest. Nothing open → "We're closed right now. Delivery from 7:00 AM", Place order disabled. Your decision 2026-11-22 | [Ordering HLD §7, §8.1](features/ordering/hld.md#8-key-flows); [UX design §5, §6](ux-design.md#5-cart-and-checkout) |
+
+**Catalog LLD walkthrough findings** (all fixed in [Catalog LLD v0.5](features/catalog/lld.md))
+| Finding | Fix |
+|---|---|
+| W-1 [Medium] Product list and cart lookup ignored the store status (HLD visibility rule) | They read the store copy and refuse `SETUP`/`CLOSED` stores (a saved or shared store ID can be stale); choosing the store stays with Store Network |
+| W-2 [Medium] The prod smoke test wrote to the real catalog | Prod smoke is read-only; the full write test runs in `dev` in the hidden store `BLR-S-99` |
+| W-3 [Medium] No function ran subcategory moves and status-change counts | Events consumer handles Catalog's own `ProductUpdated` (EventBridge rule → `catalog-inbound`), idempotent through `productActive`; the publisher stays publish-only |
+| W-4 [Medium] The count rebuild could not read product status | `BatchGetItem` on products added |
+| W-5 [Low] Two `ProductUpdated` events per detail edit | Emitted from `META` only (`changedFields: ["detail"]`) |
+| W-6 [Low] Header pointed to HLD v0.5 | HLD v0.6 |

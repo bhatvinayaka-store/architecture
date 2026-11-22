@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | **Owner team** | Logistics |
-| **Status** | HLD draft v0.6 - agreed in design review; round-3 fixes 2026-11-22 for review |
+| **Status** | HLD draft v0.7 - agreed in design review; round-3 fixes and D16-D17 2026-11-22 for review |
 | **Release** | R1 (store details, lifecycle, geohash serviceability; built with Catalog) · Later (admin UI with the staff side, delivery zones, waitlist, automatic pause) |
 | **Stack** | Java (Spring Boot 3 on Lambda + SnapStart), DynamoDB (+ geohash index), geohash library |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Logistics` · Epic: TBD |
@@ -37,7 +37,7 @@ Auth: public routes open (throttled); admin routes IAM-only, called by the opera
 
 | Method + path | Called by | Purpose |
 |---|---|---|
-| `POST /serviceability` `{lat, lng, keepStoreId?}` | Web app | Every store in range (nearest first) and the serving store, with city and opening status (POST: coordinates never in logs) |
+| `POST /serviceability` `{lat, lng, keepStoreId?}` | Web app | The serving store (used in API calls, never shown), city, opening status and a delivery estimate (POST: coordinates never in logs) |
 | `POST /internal/serviceability` `{lat, lng, keepStoreId}` | Ordering | Same answer for checkout (the cart's store as `keepStoreId`) |
 | `GET /stores/{storeId}` | Web app, other teams | Store info (name, hours, open now) |
 | `POST /admin/stores` · `PATCH /admin/stores/{storeId}` · `GET /admin/stores` | Operator script (R1) | Create (status `SETUP`), update, list |

@@ -12,7 +12,7 @@ Each story becomes one Jira story in project `STORE`; start the Jira summary wit
 |---|---|---|---|
 | IDN-01 | As a customer, I can sign up with email and verify it | Cognito managed login; verification code; unverified users cannot sign in or order | P0 |
 | IDN-02 | As a customer, I can sign in, sign out and reset my password | Session kept by the BFF (HttpOnly cookie); signed in for up to 30 days; sign-out revokes the session | P0 |
-| IDN-03 | As a customer, I can save multiple delivery addresses | Text address + location (lat/lng) from my current location or a map pin I can place by tap, drag or keyboard, confirmed in text ("Koramangala store, 1.2 km away"); max 10; one default; delete really deletes (deleting the default clears it) | P0 |
+| IDN-03 | As a customer, I can save multiple delivery addresses | Text address + location (lat/lng) from my current location or a map pin I can place by tap, drag or keyboard, confirmed in text ("We deliver here · about 10–15 min"); max 10; one default; delete really deletes (deleting the default clears it) | P0 |
 | IDN-04 | As a customer, I can add an address for someone else (e.g. parents' home) | Address has recipient name + phone; served by that area's store | P1 |
 | IDN-05 | As an admin, I can manage staff accounts and roles | Staff pool, roles (staff, manager, admin, regional manager) | Later (staff side) |
 | IDN-06 | As a service, I can call another team's API securely | IAM-signed request (SigV4), no shared secrets (ADR-0012) | P1 |

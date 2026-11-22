@@ -1,6 +1,6 @@
 # Store Network & Serviceability - High-Level Design
 
-**Status:** Draft v0.6 - agreed in design review; round-3 fixes 2026-11-22 for review · **Owner:** Logistics team · **Last updated:** 2026-11-22
+**Status:** Draft v0.7 - agreed in design review; round-3 fixes and customer-store decisions (D16, D17) 2026-11-22 for review · **Owner:** Logistics team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults) · **Decisions:** [design review log](../../design-review-log.md#4-stores-store-network-minimal-for-r1), [ADR-0009](../../adr/0009-delivery-zones-as-polygons.md)
 
 ## 1. Summary
@@ -11,7 +11,7 @@ polygons, the waitlist and automatic pausing come later. R1 builds the API, data
 
 ## 2. Goals and non-goals
 **Goals (R1):** STN-01 to STN-05, STN-07, STN-08.
-**Later:** delivery zone polygons, waitlist, `ServiceabilityMiss` analytics, automatic pause (STN-06), live ETA.
+**Later:** delivery zone polygons, waitlist, `ServiceabilityMiss` analytics, automatic pause (STN-06), live ETA (R1 shows an estimate, §5).
 **Non-goals:** products, stock, orders (Catalog, Inventory, Ordering).
 
 ## 3. Context
@@ -49,21 +49,29 @@ polygons, the waitlist and automatic pausing come later. R1 builds the API, data
 pin (lat, lng) -> geohash5 -> the cell + its 8 neighbours (stores near a cell edge)
  -> 9 parallel Queries on byGeohash -> candidate stores (a handful)
  -> keep status OPEN or PAUSED and distance <= store.deliveryRadiusM
- -> stores[]: all of them, nearest first, each with status, openNow, opensAt, distanceM
- -> serving store = choice rule (below) -> SERVICEABLE / TEMPORARILY_UNAVAILABLE / NOT_SERVICEABLE
+ -> candidates, nearest first, each with status, openNow, opensAt, distanceM (internal only)
+ -> serving store = choice rule (below) + delivery estimate -> SERVICEABLE / TEMPORARILY_UNAVAILABLE / NOT_SERVICEABLE
 ```
 **Choice rule** (one implementation, used for the app and for checkout, so both always agree):
 1. The nearest store that is `OPEN` and **open now**.
 2. With `keepStoreId` (the store of a cart that has items): that store is kept as long as it is in
    range, `OPEN` and open now. When it stops serving (closes for the day, pauses, shuts down, radius
    changed), the nearest other store open now takes over and the cart moves, with a message.
-3. No store open now: the kept store if it is `OPEN` (the customer sees "Opens at 7:00 AM"),
-   otherwise the nearest `OPEN` store; no `OPEN` store but a `PAUSED` one →
-   `TEMPORARILY_UNAVAILABLE`; nothing in range → `NOT_SERVICEABLE`.
+3. No store open now: the kept store if it is `OPEN`; otherwise the `OPEN` store that **opens
+   soonest** (nearest wins a tie), so the customer can order as early as possible (D16). The customer
+   browses its catalog and sees "Temporarily closed · Delivery from 7:00 AM". No `OPEN` store but a
+   `PAUSED` one → `TEMPORARILY_UNAVAILABLE`; nothing in range → `NOT_SERVICEABLE`.
 
 The store never moves back to a nearer one while the cart has items, so nobody is bounced between
 stores at opening time (flow 8.4). **One store per order:** combining several stores' products in
 one order is in the [parking lot](../../parking-lot.md).
+
+**Delivery estimate (R1, D17):** customers never see store names or distances, only an approximate
+delivery time. For a serving store that is open now: the store's `prepMinutes` (packing time, set by
+the operator; default 8) + 4 minutes per km, rounded up to the next 5 minutes and shown as a
+5-minute range: 1.2 km → 8 + 5 = 13 → "about 10–15 min". No store open now → `opensAt` instead
+("Delivery from 7:00 AM"). A rough figure until Fulfillment brings a live ETA; a routing API stays
+rejected (§11).
 
 **Delivery radius cap:** the cell + 8 neighbours always contain every store within one cell's
 smaller side of the pin (≈ 4.77 km in Bengaluru). So the radius is capped at **95% of that side at
@@ -80,6 +88,7 @@ larger values are rejected.
 | location | `{lat: 12.9250, lng: 77.5838}` |
 | geohash5 | `tdr1v` (computed when the location is saved) |
 | deliveryRadiusM | 3000 (default; max 4500 in Bengaluru: radius cap in §5) |
+| prepMinutes | 8 (default): packing time used in the delivery estimate (§5) |
 | phone, openingHours | per weekday, e.g. `mon: "06:00-23:00"`; timezone `Asia/Kolkata` |
 | status | `SETUP` / `OPEN` / `PAUSED` / `CLOSED`, statusReason, statusChangedAt, statusChangedBy (`system-operator` in R1: no staff accounts yet, D10) |
 | openedAt, version, createdAt, updatedAt | |
@@ -106,9 +115,9 @@ Invalid transitions (e.g. `CLOSED → OPEN`, `SETUP → PAUSED`) are rejected (c
 
 | Method + path | Caller | Purpose |
 |---|---|---|
-| `POST /serviceability` `{lat, lng, keepStoreId?}` | Web app | `{result: SERVICEABLE / TEMPORARILY_UNAVAILABLE / NOT_SERVICEABLE, storeId?, stores: [{storeId, storeName, city, cityName, status, openNow, opensAt, distanceM}]}`: `storeId` is the serving store from the choice rule (§5); `stores` lists every store in range, nearest first (max 10). The shell sends its active store as `keepStoreId`, except when the customer chooses a new location or opens the app with an empty cart. `openNow` and `opensAt` are worked out from opening hours in the store's timezone; `opensAt` is a UTC instant and the UI shows it in store time. `city` (`BLR`, for prices and fees) and `cityName` ("Bengaluru", shown on the address form) come from the store. `distanceM` lets the UI confirm the location in words ("Koramangala store, 1.2 km away"). POST so coordinates never appear in access logs; not cached |
+| `POST /serviceability` `{lat, lng, keepStoreId?}` | Web app | `{result: SERVICEABLE / TEMPORARILY_UNAVAILABLE / NOT_SERVICEABLE, storeId?, city?, cityName?, status?, openNow?, opensAt?, delivery?: {minMinutes, maxMinutes}}`: `storeId` is the serving store from the choice rule (§5), used by the app only to call Catalog and Ordering, never shown; `delivery` is the estimate (§5) when the store is open now, otherwise `opensAt`. No store names, distances or other stores (D17: customers don't need them, and dark-store locations stay private). The shell sends its active store as `keepStoreId`, except when the customer chooses a new location or opens the app with an empty cart. `openNow` and `opensAt` are worked out from opening hours in the store's timezone; `opensAt` is a UTC instant and the UI shows it in store time. `city` (`BLR`, for prices and fees) and `cityName` ("Bengaluru", shown on the address form) come from the store. The UI confirms the location in words with the estimate ("We deliver here · about 10–15 min"). POST so coordinates never appear in access logs; not cached |
 | `POST /internal/serviceability` `{lat, lng, keepStoreId}` | Ordering | Same answer for checkout, with the cart's store as `keepStoreId` |
-| `GET /stores/{storeId}` | Web app, other teams | Public store info (name, hours, open now) |
+| `GET /stores/{storeId}` | Other teams, operator scripts | Store info (name, hours, open now); the customer UI does not show it (D17) |
 | `POST /admin/stores` | Operator script (R1) | Create a store (status `SETUP`) |
 | `PATCH /admin/stores/{storeId}` | Operator script (R1) | Update details (name, address, location, hours, radius) |
 | `GET /admin/stores` | Operator script (R1) | All stores |
@@ -120,7 +129,7 @@ Invalid transitions (e.g. `CLOSED → OPEN`, `SETUP → PAUSED`) are rejected (c
 ([Ordering HLD §7](../ordering/hld.md#7-interfaces)): `NOT_SERVICEABLE` → `STORE_UNAVAILABLE`
 `NOT_SERVED` · `TEMPORARILY_UNAVAILABLE` → `STORE_UNAVAILABLE` `PAUSED` · serving store ≠ cart's
 store → `STORE_CHANGED` · same store, `OPEN` but not open now → `STORE_UNAVAILABLE`
-`OUTSIDE_HOURS` (with `opensAt`). Store Network itself returns only `result`, `storeId` and `stores`.
+`OUTSIDE_HOURS` (with `opensAt`). Store Network itself returns only `result`, the serving store and its opening status.
 
 **Events published:** `StoreCreated`, `StoreUpdated`, `StoreStatusChanged {storeId, from, to, reason}`;
 nightly, `StoreUpdated` with `reason: RECONCILE` for every store (repair path for copies).
@@ -128,8 +137,8 @@ nightly, `StoreUpdated` with `reason: RECONCILE` for every store (repair path fo
 ## 8. Key flows
 **8.1 Customer picks an address**
 ```
-pin -> POST /serviceability {lat, lng} -> {SERVICEABLE, storeId BLR-S-01, stores [BLR-S-01, 1.2 km]}
- -> active location {pin, BLR-S-01, BLR} -> Catalog GET /stores/BLR-S-01/products
+pin -> POST /serviceability {lat, lng} -> {SERVICEABLE, storeId BLR-S-01, delivery 10-15 min}
+ -> active location {pin, BLR-S-01, BLR}; header "about 10–15 min" -> Catalog GET /stores/BLR-S-01/products
 ```
 **8.2 Opening a new store**
 ```
@@ -141,17 +150,25 @@ POST /admin/stores {BLR-S-02, ...} -> SETUP -> StoreCreated
 **8.3 A store pauses**
 ```
 POST .../pause {reason: "heavy rain"} -> StoreStatusChanged
- -> next re-check: carts at that store move to the nearest store open now (STORE_CHANGED banner);
-    if none is open now, customers see "temporarily unavailable"; checkout applies the same rule
+ -> next re-check: carts at that store move to the nearest store open now ("Delivery time updated" banner);
+    if none is open now, the OPEN store that opens soonest; only paused stores -> "Temporarily closed";
+    checkout applies the same rule
 ```
 
 **8.4 Closing time with a cart** (two stores in range)
 ```
 22:50  cart at BLR-S-01 (1.2 km, open 06:00-23:00); BLR-S-02 (3.8 km) is open 24 h
 23:05  re-check {keepStoreId: BLR-S-01} -> BLR-S-01 not open now -> storeId BLR-S-02
-       -> cart moves to BLR-S-02, STORE_CHANGED banner ("Some prices or items may differ")
+       -> cart moves to BLR-S-02, banner "Delivery time updated: about 20–25 min. Some items or prices have changed."
 07:00  BLR-S-01 opens; re-check {keepStoreId: BLR-S-02} -> still open now -> stays (no bounce)
 next visit with an empty cart -> no keepStoreId -> nearest store open now: BLR-S-01
+```
+
+**8.5 Nothing open now** (D16; BLR-S-01 at 1.2 km opens 09:00, BLR-S-02 at 3.8 km opens 07:00)
+```
+02:00  empty cart -> no store open now -> the OPEN store opening soonest: BLR-S-02
+       -> BLR-S-02's catalog, "Temporarily closed · Delivery from 7:00 AM"; Place order disabled until 07:00
+02:00  cart with items at BLR-S-01 -> kept (rule 3): "Delivery from 9:00 AM"; the cart never moves at night
 ```
 
 ## 9. Failure handling
@@ -182,6 +199,8 @@ next visit with an empty cart -> no keepStoreId -> nearest store open now: BLR-S
 | Store APIs inside Catalog | Rejected: ownership; data would have to move out later |
 | Only the single nearest store, "Opens at …" when it is closed | Rejected: customers near a closed store could not order while another store in range is open |
 | Prefer stores open now on every re-check (v0.5) | Replaced by the choice rule: customers were moved to a farther store at night and back at opening time, the cart moving twice |
+| Nearest `OPEN` store when nothing is open now (v0.6) | Replaced by the store that opens soonest (D16): a nearer store opening at 9:00 made customers wait while another opened at 7:00 |
+| Store name and distance shown to customers (v0.4) | Replaced by a delivery estimate (D17): customers care when it arrives, not where from |
 | Combined catalog of every open store in range (one order from several stores, one rider per store) | Parked: several riders and fees per order, reservations across stores, no per-store cache; R1 has one store ([parking lot](../../parking-lot.md)) |
 
 ## 12. Risks and open questions
@@ -201,3 +220,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | 2026-11-21 | v0.4 (design review fixes): serviceability returns `storeName` and `distanceM` (text confirmation for the accessible location picker); `opensAt` as a UTC instant computed in the store's timezone | [Design review log §12](../../design-review-log.md#12-design-review-fixes) | Agreed 2026-11-21 |
 | 2026-11-21 | v0.5 (round-2 fixes): how Ordering maps `status` + `openNow` to its `STORE_UNAVAILABLE` reasons (no API change) | [Design review log §13](../../design-review-log.md#13-design-review-fixes-round-2) (BE-12) | Applied 2026-11-21, for review |
 | 2026-11-22 | v0.6 (round-3 fixes): serviceability returns every store in range plus the serving store from one choice rule (nearest open now; the cart's store kept while it serves; no bouncing); `keepStoreId`; `city` and `cityName` in the answer; radius capped at 95% of a geohash5 cell (4.5 km in Bengaluru); checkout reasons mapped to `NOT_SERVED` / `PAUSED` / `STORE_CHANGED` / `OUTSIDE_HOURS`; operator scripts instead of an admin UI; `statusChangedBy = system-operator`; prod throttling; event consumers corrected; nightly `StoreUpdated` re-send as the repair path for copies | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (D10, D11, M-1, M-8, M-18, M-19, H-2, L-17) | Applied 2026-11-22, for review |
+| 2026-11-22 | v0.7: nothing open now → the `OPEN` store that opens soonest (a cart with items keeps its store); customers see a delivery estimate (`prepMinutes` + 4 min/km, 5-minute range) instead of store names and distances; serviceability returns only the serving store, its opening status and `delivery`; flow 8.5 | [log §16](../../design-review-log.md#16-catalog-lld-walkthrough-and-customer-store-decisions) (D16, D17) | Applied 2026-11-22, for review |
