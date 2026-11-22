@@ -6,8 +6,8 @@
 | | |
 |---|---|
 | **Owner team** | Logistics |
-| **Status** | HLD draft v0.1 - in review |
-| **Release** | R3 (split into R3a tracking, R3b dispatch + routes) |
+| **Status** | HLD draft v0.2 - in review (deferred; note from design review: rider geo search may use **Redis GEO** (geohash) instead of in-memory search, decided in this feature's review) |
+| **Release** | Later (split into tracking, then dispatch + routes) |
 | **Stack** | Java (Spring Boot 3 + Kafka Streams) in containers on **EKS**, **Kafka** on **EC2** (Docker), Python (route optimiser, Lambda), DynamoDB, API Gateway WebSocket, Amazon Location Service |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Logistics` · Epic: TBD |
 
@@ -22,8 +22,8 @@
 ## Scope by release
 | Release | In scope |
 |---|---|
-| R3a | Kafka on EC2, rider simulator, location ingest + latest positions, live tracking WebSocket, EKS cluster |
-| R3b | Pick tasks, dispatch, batching (max 3), route optimisation, delivery statuses, automatic store pause signal |
+| Phase A | Kafka on EC2, rider simulator, location ingest + latest positions, live tracking WebSocket, EKS cluster |
+| Phase B | Pick tasks, dispatch, batching (max 3), route optimisation, delivery statuses, automatic store pause signal |
 | Parking lot | Real rider mobile app, rider payroll, traffic-aware re-routing |
 
 ## Owns (data)

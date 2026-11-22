@@ -6,8 +6,8 @@
 | | |
 |---|---|
 | **Owner team** | Payments |
-| **Status** | HLD draft v0.1 - in review |
-| **Release** | R1 (reconciliation report P2) |
+| **Status** | **Deferred**: not needed for now (decided 2026-11-15); HLD draft v0.2 kept for later |
+| **Release** | Later (checkout confirms orders without payment until then) |
 | **Stack** | Java (Spring Boot 3 on Lambda + SnapStart), SQS + DLQ, DynamoDB |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Payments` · Epic: TBD |
 
@@ -22,8 +22,8 @@
 ## Scope by release
 | Release | In scope |
 |---|---|
-| R1 | Charge, retries + DLQ, decline handling, refunds, payment status API, gateway simulator |
-| R1 (P2) | Daily reconciliation report |
+| First release | Charge, retries + DLQ, decline handling, refunds, payment status API, gateway simulator |
+| First release (P2) | Daily reconciliation report |
 | Never | Real payment providers, wallets, EMI (learning project) |
 
 ## Owns (data)

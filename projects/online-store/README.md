@@ -1,6 +1,6 @@
 # Online Store (working name: ShopLite)
 
-**Status:** Candidate (under evaluation) - requirements draft · **Last updated:** 2026-11-14
+**Status:** Chosen project - **R1 design agreed** (plus Support); round-3 review fixes 2026-11-22 for review; Notifications to review; staff side after R1 · **Last updated:** 2026-11-22
 
 ## What is it?
 A quick-commerce platform for a fictional startup that runs small neighbourhood warehouses
@@ -13,7 +13,7 @@ APIs and events.
 
 ## Problem statement
 Customers want everyday essentials quickly and reliably. A fast-delivery business can only
-deliver on that promise if four hard things work together:
+deliver on that promise if five hard things work together:
 
 1. **Accurate stock.** If the app sells an item the dark store does not have, the order is
    cancelled after payment. Customers lose trust; the business pays for refunds.
@@ -21,8 +21,9 @@ deliver on that promise if four hard things work together:
    once. Orders must never be duplicated or lost, and payment must never be taken twice.
 3. **Efficient delivery.** Riders often carry several orders. A poor route order means late
    deliveries and fewer orders per rider.
-4. **Right store, right items.** Each customer is served by exactly one dark store, decided by
-   the delivery address they choose. They must only see what that store actually sells.
+4. **Right store, right items.** Each order is served by exactly one dark store, chosen from the
+   delivery address the customer picks and the stores' opening hours. Customers must only see what
+   that store actually sells.
 5. **Support at scale.** Most support contacts are "Where is my order?" and policy questions.
    Answering them by hand does not scale.
 
@@ -50,23 +51,24 @@ Measured in simulation and load tests (there are no real customers):
 | Checkout success rate (excluding simulated payment declines) | > 99% |
 | Orders delivered within the promised time | > 95% |
 | "Where is my order?" questions answered by the AI without a human | > 60% |
-| Availability of customer-facing APIs (prod) | 99.5% |
+| Availability of customer-facing APIs (prod) | 99.5% end to end (each service 99.9%) |
 
 ## Features and owning teams
 | Feature | Team | Stack | Release |
 |---|---|---|---|
-| [Store Network & Serviceability](features/store-network/README.md) | Logistics | Java (Lambda), DynamoDB, S3 (GeoJSON zones) | R1 (R3 auto-pause) |
-| [Identity & Accounts](features/identity/README.md) | Identity | Cognito, Java (Lambda), DynamoDB | R1 |
-| [Catalog & Search](features/catalog/README.md) | Catalog | Java (Lambda), Aurora PostgreSQL, S3; R2 OpenSearch + ElastiCache | R1 / R2 |
-| [Inventory](features/inventory/README.md) | Inventory | Java (Lambda), DynamoDB transactions + Streams | R1 / R2 |
-| [Cart & Checkout](features/ordering/README.md) | Commerce | Java (Lambda), DynamoDB, Step Functions | R1 |
-| [Payments](features/payments/README.md) | Payments | Java (Lambda), SQS + DLQ, DynamoDB | R1 |
-| [Notifications](features/notifications/README.md) | Engagement | Python (Lambda), SES, DynamoDB, S3 | R1 |
-| [Supply & Procurement](features/procurement/README.md) | Supply | Java (Lambda), Aurora PostgreSQL, Step Functions | R2 |
-| [Data & Analytics](features/analytics/README.md) | Data | Python (Lambda), S3, Glue, Athena | R2 |
-| [Fulfillment & Delivery](features/fulfillment/README.md) | Logistics | Java (Kafka Streams) on EKS, Kafka on EC2, Python optimiser | R3 |
-| [Customer Support & AI Assistant](features/support/README.md) | Customer Experience | Python (Lambda), Bedrock | R4 |
-| [Platform](platform/README.md) | Platform | TypeScript (AWS CDK), CodePipeline | R0 + ongoing |
+| [`common` repo](adr/0014-common-repo-for-shared-infrastructure.md) (shared) | Shared | TypeScript (CDK), React shell | R0 |
+| [Catalog & Search](features/catalog/README.md) | Catalog | Java (Spring Boot on Lambda), DynamoDB ×2, S3 + CloudFront; OpenSearch later | R1 (search later) |
+| [Store Network & Serviceability](features/store-network/README.md) | Logistics | Java (Spring Boot on Lambda), DynamoDB + geohash | R1 minimal (zones later) |
+| [Inventory](features/inventory/README.md) | Inventory | Java (Spring Boot on Lambda), DynamoDB ×5 (transactions, Streams) | R1 |
+| [Identity & Accounts](features/identity/README.md) | Identity | Cognito (customer + staff pools, managed login), TypeScript BFF, Java (Spring Boot on Lambda), DynamoDB | R1 (staff side later) |
+| [Cart & Checkout](features/ordering/README.md) | Commerce | Java (Spring Boot on Lambda), DynamoDB; browser cart in R1 | R1 (cash on delivery) |
+| [Customer Support & AI Assistant](features/support/README.md) | Customer Experience | Java (Spring Boot on Lambda), Bedrock (Converse, Knowledge Base, Guardrails) | R2 |
+| [Notifications](features/notifications/README.md) | Engagement | Python (Lambda), SES, DynamoDB, S3 | R3 |
+| [Payments](features/payments/README.md) | Payments | Java (Lambda), SQS + DLQ, DynamoDB | Later |
+| [Supply & Procurement](features/procurement/README.md) | Supply | Java (Lambda), relational DB, Step Functions | Later |
+| [Data & Analytics](features/analytics/README.md) | Data | Python (Lambda), S3, Glue, Athena | Later |
+| [Fulfillment & Delivery](features/fulfillment/README.md) | Logistics | Java (Kafka Streams) on EKS, Kafka on EC2, Python optimiser | Later |
+| [Platform](platform/README.md) | Platform | TypeScript (AWS CDK), CodePipeline | Not needed for now |
 
 Why this split: each feature is a separate business capability with its own data and its own
 reason to change (see [ADR-0002](adr/0002-polyrepo-and-team-ownership.md)). Money (Payments) is
@@ -77,37 +79,53 @@ path; Inventory stays the only writer of stock ([ADR-0008](adr/0008-procurement-
 Store Network is separate because every other feature needs "which store serves this address"
 ([ADR-0009](adr/0009-delivery-zones-as-polygons.md)).
 
+## Build order
+Every feature is designed first; development starts once all designs are finalised
+([design review log](design-review-log.md)). Then features are built in this order:
+
+1. **Catalog**, with a minimal **Store Network** (stores, status, serviceability), full stack
+2. **Inventory**
+3. **Identity** (also decides auth for all features)
+4. **Ordering** (cart + checkout; no payment step, orders confirmed as cash on delivery)
+5. **Support**
+6. **Notifications**
+
+R1 runs with **one store** (`BLR-S-01`); the design is sized for ~3,000 stores. Deferred: Payments,
+Procurement, Analytics, Fulfillment, Catalog search, delivery zones. Platform is not needed for
+now; shared pieces live in the [`common` repo](adr/0014-common-repo-for-shared-infrastructure.md).
+
 ## Releases
 | Release | Scope | Outcome |
 |---|---|---|
-| **R0 Foundations** | Platform: network, event bus, constructs, pipeline template, budget alarms | Teams can ship a "hello" service to dev and prod |
-| **R1 Core commerce** | Store Network (stores + zones), Identity, Catalog (browse), Inventory (stock + reservations), Cart & Checkout, Payments, Notifications, web shell | A customer can sign up, buy, pay and get an email. **Resume-ready.** |
-| **R2 Search, supply, insights** | Catalog search + cache, Supply & Procurement, Data & Analytics | Fast search, automatic restocking, sales reports |
-| **R3 Delivery** | Fulfillment & Delivery | Live rider tracking, dispatch, route optimisation |
-| **R4 AI support** | Customer Support & AI Assistant | AI answers policy and order-status questions |
+| **R0 Foundations** | `common` repo: event buses, budget alert, alarm topics, web shell + hosting, event contracts | Teams can deploy to dev and prod |
+| **R1 Core commerce** | Catalog (browse, city prices, MRP, listings), Store Network (minimal), Inventory (batches, reservations, badges), Identity (customer sign-in + BFF), Cart & Checkout (cash on delivery, fees). No staff screens: an operator loads stores, products, prices, listings and stock with IAM-signed scripts ([D10](design-review-log.md#14-design-review-fixes-round-3)) | A customer can browse their store, sign up and place an order. **Resume-ready.** |
+| **R2 AI support** | Customer Support & AI Assistant | AI answers policy and order-status questions |
+| **R3 Notifications** | Order emails, sent from a project domain with DKIM (a personal mailbox would fail DMARC and land in spam) | Customers are told about their orders |
+| **Later** | Staff side (staff pool, roles, admin screens), Payments, Catalog search, Supply & Procurement, Data & Analytics, Fulfillment & Delivery, delivery zones | Staff work in the app, payment step, search, restocking, reports, live delivery |
 
 ## Design progress
-High-level designs are written and reviewed one feature at a time, in this order. Platform comes
-last because its design is driven by what the features need (it is still **built** first).
+High-level designs are reviewed one feature at a time, in build order. Decisions are recorded in
+the [design review log](design-review-log.md); review fixes are in [§12](design-review-log.md#12-design-review-fixes) (2026-11-21), [§13](design-review-log.md#13-design-review-fixes-round-2) (round 2), [§14](design-review-log.md#14-design-review-fixes-round-3) (round 3, 2026-11-22) and [§15](design-review-log.md#15-aws-checks) (AWS checks, 2026-11-22).
 
 | # | Feature | HLD status |
 |---|---|---|
-| 1 | Store Network & Serviceability | Draft v0.2 - in review |
-| 2 | Identity & Accounts | Draft v0.1 - in review |
-| 3 | Catalog & Search | Draft v0.1 - in review |
-| 4 | Inventory | Draft v0.1 - in review |
-| 5 | Cart & Checkout | Draft v0.1 - in review |
-| 6 | Payments | Draft v0.1 - in review |
-| 7 | Notifications | Draft v0.1 - in review |
-| 8 | Supply & Procurement | Draft v0.1 - in review |
-| 9 | Fulfillment & Delivery | Draft v0.1 - in review |
-| 10 | Customer Support & AI Assistant | Draft v0.1 - in review |
-| 11 | Data & Analytics | Draft v0.1 - in review |
-| 12 | Platform | Draft v0.1 - in review |
+| 1 | Catalog & Search | **HLD v0.6 - agreed** (round-3 fixes for review) · LLD v0.4 for review |
+| 1 | Store Network & Serviceability | **Draft v0.6 - agreed** (round-3 fixes for review: one store per order with backups, 4.5 km cap) |
+| 2 | Inventory | **Draft v0.5 - agreed** (round-3 fixes for review) |
+| 3 | Identity & Accounts | **Draft v0.5 - customer side agreed** (round-3 fixes for review); staff side after R1 |
+| 4 | Cart & Checkout | **Draft v0.5 - agreed** (round-3 fixes for review) |
+| 5 | Customer Support & AI Assistant | **Draft v0.4 - agreed** (round-3 fixes for review; Bedrock checked: Claude through the `au.` profile, D15) |
+| 6 | Notifications | Draft v0.2 - in review (sender domain decided) |
+| - | Customer UX rules (URLs, states, location picker, copy, accessibility) | [UX design](ux-design.md) v0.3 for review; wireframes still to do |
+| - | Staff side (staff pool + roles, admin screens, agent console) | **After R1** ([D10](design-review-log.md#14-design-review-fixes-round-3)); R1 uses IAM-signed operator scripts and the `system-operator` actor |
+| - | Payments, Procurement, Fulfillment, Analytics | Draft v0.2 - deferred (release labels updated) |
+| - | Platform | Draft v0.1 - not needed for now (unchanged) |
 
 ## Documents
 - [Requirements](requirements.md) - product-wide goals, rules and non-functional requirements
+- [Design review log](design-review-log.md) - every design decision, with the reason
 - [System HLD](system-hld.md) - how all features fit together (draft for review)
+- [UX design](ux-design.md) - customer screen rules: URLs, states, location picker, error messages, accessibility
 - [Decisions (ADRs)](adr/)
 - [Scope control](scope-control.md) - the main goal, and how we change designs as we build
 - [Parking lot](parking-lot.md) - good ideas deferred to later

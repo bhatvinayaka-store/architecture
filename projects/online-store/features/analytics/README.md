@@ -1,13 +1,13 @@
 # Data & Analytics
 
 > Answers the business questions: what sold, where and when, how much we bought versus sold,
-> how often stores ran out, where customers want us but we don't deliver, and (R3) delivery performance.
+> how often stores ran out, where customers want us but we don't deliver, and (with Fulfillment) delivery performance.
 
 | | |
 |---|---|
 | **Owner team** | Data |
-| **Status** | HLD draft v0.1 - in review |
-| **Release** | R2 (delivery metrics in R3) |
+| **Status** | HLD draft v0.2 - in review |
+| **Release** | Later (after R1-R3) |
 | **Stack** | Python 3.13 (Lambda), Amazon S3 (data lake), AWS Glue Data Catalog, Amazon Athena, EventBridge archive |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Data` · Epic: TBD |
 
@@ -26,13 +26,13 @@
 | Stockouts | How often and how long were items out per store? | `StockLevelChanged` |
 | Checkout funnel | Placed -> confirmed -> cancelled by reason | `OrderPlaced`, `OrderConfirmed`, `OrderCancelled` |
 | Demand where we don't deliver | Where should the next store open? | `ServiceabilityMiss` |
-| Delivery performance (R3) | On-time %, average delivery time | `OrderDispatched`, `OrderDelivered` |
+| Delivery performance (with Fulfillment) | On-time %, average delivery time | `OrderDispatched`, `OrderDelivered` |
 
 ## Scope by release
 | Release | In scope |
 |---|---|
-| R2 | Ingestion, pseudonymisation, raw + curated tables, the reports above (except delivery), reports API, replay/backfill |
-| R3 | Delivery performance report |
+| First release | Ingestion, pseudonymisation, raw + curated tables, the reports above (except delivery), reports API, replay/backfill |
+| With Fulfillment | Delivery performance report |
 | Parking lot | Real-time dashboards, ML forecasting |
 
 ## Owns (data)

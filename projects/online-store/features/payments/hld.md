@@ -1,6 +1,6 @@
 # Payments - High-Level Design
 
-**Status:** Draft v0.1 - in review · **Owner:** Payments team · **Last updated:** 2026-11-14
+**Status:** Draft v0.2 - in review (deferred) · **Owner:** Payments team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults)
 
 ## 1. Summary
@@ -9,7 +9,7 @@ order at a simulated gateway, and turns `OrderCancelled` into refunds. Every ste
 by `orderId`, so retries, duplicates and crashes can never charge twice.
 
 ## 2. Goals and non-goals
-**Goals (R1):** PAY-01 to PAY-04. **(P2):** PAY-05 reconciliation.
+**Goals (first Payments release, in Later):** PAY-01 to PAY-04. **(P2):** PAY-05 reconciliation.
 **Non-goals:** real providers, saved cards, partial refunds, multiple currencies.
 
 ## 3. Context
@@ -20,7 +20,7 @@ by `orderId`, so retries, duplicates and crashes can never charge twice.
                                        DLQ + alarm                   DynamoDB payments-<stage>
                                                                               |
                                   PaymentSucceeded / PaymentFailed / RefundIssued ──> EventBridge
- Commerce: OrderCancelled ──> SQS payments-refunds ──> refund worker (Lambda) ──> gateway simulator
+ Ordering: OrderCancelled ──> SQS payments-refunds ──> refund worker (Lambda) ──> gateway simulator
 ```
 
 ## 4. What drives the design
@@ -120,3 +120,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | Date | Change | Why (story / requirement) | Approved |
 |---|---|---|---|
 | 2026-11-14 | v0.1 first draft | - | Pending review |
+| 2026-11-22 | v0.2: release label (Later) and team name (Commerce is now Ordering) updated | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (L-28) | Applied 2026-11-22, for review |

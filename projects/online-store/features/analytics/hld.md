@@ -1,6 +1,6 @@
 # Data & Analytics - High-Level Design
 
-**Status:** Draft v0.1 - in review · **Owner:** Data team · **Last updated:** 2026-11-14
+**Status:** Draft v0.2 - in review (deferred) · **Owner:** Data team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults)
 
 ## 1. Summary
@@ -9,15 +9,15 @@ A small, serverless data lake. Every business event is copied from EventBridge i
 datasets by scheduled Athena queries. Nothing runs when nobody is querying.
 
 ## 2. Goals and non-goals
-**Goals (R2):** ANL-01 to ANL-05 (sales, demand where we don't deliver, purchased vs sold,
-stockouts, replay). **(R3):** on-time delivery.
+**Goals (first Analytics release, in Later):** ANL-01 to ANL-05 (sales, demand where we don't deliver, purchased vs sold,
+stockouts, replay). **(With Fulfillment):** on-time delivery.
 **Non-goals:** real-time dashboards, BI tool licences, machine learning.
 
 ## 3. Context
 ```
  EventBridge shop-<stage> (archive on)
    └─ rule: all domain events ──> SQS analytics-<stage> ──> ingest Lambda (Python, batches of up to 5 min)
-                                                              |  drop/hash personal data
+                                                              |  drop/HMAC personal data
                                                               v
                                           S3 raw/eventType=.../dt=.../hour=.../*.json.gz
                                                               |
@@ -26,7 +26,7 @@ stockouts, replay). **(R3):** on-time delivery.
                                            report queries (Athena) ──> S3 reports/*.json
                                                               |
                          Reports API (Lambda) ──> admin "Reports" page (micro-frontend)
- Backfill: EventBridge archive replay ──> same ingest path (idempotent by eventId)
+ Backfill: EventBridge archive replay, to the analytics rule only ──> same ingest path (idempotent by eventId)
 ```
 
 ## 4. What drives the design
@@ -57,7 +57,7 @@ stockouts, replay). **(R3):** on-time delivery.
 | `stock_changes` | One row per bucket change | store_id, product_id, in_stock, few_left, at |
 | `goods_receipts` | One row per receipt line | receipt_id, store_id, product_id, qty, at |
 | `serviceability_misses` | One row per miss | rough_area, at |
-| `deliveries` (R3) | One row per delivery | order_id, store_id, promised_by, delivered_at, on_time |
+| `deliveries` (with Fulfillment) | One row per delivery | order_id, store_id, promised_by, delivered_at, on_time |
 
 ## 7. Interfaces
 See the [README](README.md). Design rules:
@@ -68,7 +68,7 @@ See the [README](README.md). Design rules:
 ## 8. Key flows
 **8.1 Ingest**
 ```
-OrderConfirmed -> SQS -> ingest Lambda: dedupe by eventId within batch, hash userId, write
+OrderConfirmed -> SQS -> ingest Lambda: dedupe by eventId within batch, HMAC userId, write
 raw/eventType=OrderConfirmed/dt=2026-11-14/hour=10/<batch>.json.gz
 ```
 **8.2 Hourly refresh**
@@ -77,7 +77,7 @@ scheduler -> transform: INSERT new raw rows into curated (Parquet) -> report que
 ```
 **8.3 Backfill**
 ```
-POST /admin/backfill {from, to} -> EventBridge replay -> ingest (duplicates removed in curated by eventId) -> re-run reports
+POST /admin/backfill {from, to} -> EventBridge replay to the analytics rule only (FilterArns) -> ingest (duplicates removed in curated by eventId) -> re-run reports
 ```
 
 ## 9. Failure handling
@@ -100,7 +100,7 @@ POST /admin/backfill {from, to} -> EventBridge replay -> ingest (duplicates remo
 | Option | Decision |
 |---|---|
 | Kinesis Data Firehose to S3 | Ideal, but not on the Free plan (paid plan only) |
-| Kafka as the analytics pipeline | Rejected: Kafka runs only during R3 stints; EventBridge archive covers replay |
+| Kafka as the analytics pipeline | Rejected: Kafka runs only during Fulfillment stints; EventBridge archive covers replay |
 | Redshift / QuickSight | Rejected for cost |
 | Glue crawlers | Rejected: partition projection is cheaper and simpler |
 
@@ -113,3 +113,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | Date | Change | Why (story / requirement) | Approved |
 |---|---|---|---|
 | 2026-11-14 | v0.1 first draft; Kafka removed from analytics ingestion | Simplification; Kafka only for R3 GPS stream | Pending review |
+| 2026-11-22 | v0.2: backfill replays only to the analytics rule (`FilterArns`), so other consumers never see old events again; user IDs are HMAC values everywhere; release labels updated | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (M-11, L-28, L-29) | Applied 2026-11-22, for review |

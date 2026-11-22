@@ -6,14 +6,14 @@
 | | |
 |---|---|
 | **Owner team** | Engagement |
-| **Status** | HLD draft v0.1 - in review |
-| **Release** | R1 (order emails) · R2 (low-stock alerts) · P2 (back in stock) |
+| **Status** | HLD draft v0.2 - in review (round-3 fixes 2026-11-22) |
+| **Release** | R3: after Support in the build order (order emails) · Later (low-stock alerts, back in stock) |
 | **Stack** | Python 3.13 (Lambda, Powertools), Amazon SES (email), DynamoDB, S3 (templates), SQS |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Engagement` · Epic: TBD |
 
 ## What it does
 - Listens to business events and turns them into messages using templates.
-- R1 channel: **email** via Amazon SES.
+- R3 channel: **email** via Amazon SES, sent from a project domain with DKIM.
 - Respects preferences: transactional messages always sent; optional ones (e.g. "back in stock")
   only if the user opted in.
 - De-duplicates: the same event never produces two messages.
@@ -21,20 +21,20 @@
 ## Messages
 | Trigger event | Message | To | Release |
 |---|---|---|---|
-| `OrderConfirmed` | Order confirmation with items and total | Customer | R1 |
-| `PaymentFailed` | Payment failed, please try again | Customer | R1 |
-| `OrderCancelled` | Order cancelled (+ refund note if paid) | Customer | R1 |
-| `RefundIssued` | Refund completed | Customer | R1 |
-| `StockLow` | Low-stock digest (max one per product per hour) | Store manager | R2 |
+| `OrderConfirmed` | Order confirmation with items and total | Customer | R3 |
+| `PaymentFailed` | Payment failed, please try again | Customer | With Payments |
+| `OrderCancelled` | Order cancelled (+ refund note once Payments exists) | Customer | R3 |
+| `RefundIssued` | Refund completed | Customer | With Payments |
+| `StockLow` | Low-stock digest (max one per product per hour) | Store manager | Later (with Procurement) |
 | `StockLevelChanged` (out -> in) | Back in stock | Customers who asked | P2 |
-| `OrderDispatched`, `OrderDelivered` | Delivery updates | Customer | R3 |
-| `TicketUpdated` | Support reply | Customer | R4 |
+| `OrderDispatched`, `OrderDelivered` | Delivery updates | Customer | With Fulfillment |
+| `TicketUpdated` | Support reply | Customer | Later |
 
 ## Scope by release
 | Release | In scope |
 |---|---|
-| R1 | Email for order/payment/refund events, preferences, templates, de-duplication |
-| R2 / P2 | Store-manager digests, back-in-stock subscriptions |
+| R3 | Email for order events (payment and refund emails come with Payments), preferences, templates, de-duplication; sender on a project domain with DKIM |
+| Later (P2) | Store-manager digests, back-in-stock subscriptions |
 | Parking lot | SMS, WhatsApp, mobile push (need the paid plan / a mobile app) |
 
 ## Owns (data)

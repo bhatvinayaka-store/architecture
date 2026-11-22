@@ -1,84 +1,77 @@
 # Customer Support & AI Assistant
 
-> Answers customer questions instantly (policies and "where is my order?") with an AI assistant
-> grounded in our own data, and hands off to a human agent when needed.
+> Answers signed-in customers' questions instantly (policies and their own orders) with an AI
+> assistant grounded in our data, and hands off to a person when needed.
 
 | | |
 |---|---|
 | **Owner team** | Customer Experience |
-| **Status** | HLD draft v0.1 - in review |
-| **Release** | R4 (could be pulled forward to right after R1) |
-| **Stack** | Python 3.13 (Lambda), Amazon Bedrock (Converse API with tool use, Knowledge Base, Guardrails), API Gateway WebSocket, DynamoDB, S3 |
+| **Status** | HLD draft v0.4 - customer side agreed in design review; round-3 fixes 2026-11-22 for review; Bedrock checked 2026-11-22 (Claude through the `au.` profile, D15) |
+| **Release** | R2: next after Ordering in the build order |
+| **Stack** | Java (Spring Boot 3 on Lambda + SnapStart), Amazon Bedrock (Converse API with tool use, Managed Knowledge Base, Guardrails), DynamoDB, S3 |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `CustomerExperience` · Epic: TBD |
 
 ## What it does
-- **Chat** in the web app, with streamed answers.
-- **Policy answers** from our help documents (refunds, delivery times, cancellations), with sources.
-- **Order help:** looks up the signed-in customer's own orders, payments and delivery status
-  through other teams' APIs ("tools").
-- **Hand-off:** creates a ticket with the conversation for a human support agent.
-- **Agent console:** support agents see and answer tickets.
-- **Safety:** guardrails against off-topic answers, personal-data leaks and prompt injection.
+- **Chat** for signed-in customers (request/response through the BFF).
+- **Policy answers** from our help documents in a Bedrock Knowledge Base, with sources.
+- **Order help:** reads the signed-in customer's own orders through Ordering ("tools").
+- **Hand-off:** creates a ticket with the conversation.
+- **Safety and cost:** Guardrails, fixed tools, hard limits, evaluation set in the pipeline.
 
 ## Scope by release
 | Release | In scope |
 |---|---|
-| R4 | Chat, knowledge base, order/payment/delivery tools, tickets, agent console, guardrails, evaluation set |
-| Parking lot | Voice support; refunds issued by the AI (always needs a human) |
+| R2 | Chat, Knowledge Base, order tools, tickets (customer view), Guardrails, limits, evaluation set |
+| Later | Agent console (staff side), streaming answers, delivery-status and payment tools |
+| Parking lot | Voice; refunds by the AI (always needs a human) |
 
 ## Owns (data)
 | Data | Store |
 |---|---|
-| Conversations (TTL 90 days), tickets, ticket messages | DynamoDB `support-<stage>` |
-| Help documents (source of truth) | S3 `support-kb-<stage>` (Markdown) |
-| Knowledge base index | Bedrock Knowledge Base + vector store (choice to verify, see HLD) |
-| Evaluation set + results | S3 / repo `support-evals` |
+| Conversations (TTL 30 days) | DynamoDB `support-conversations-<stage>` |
+| Tickets and ticket messages | DynamoDB `support-tickets-<stage>` |
+| Message counters (per user per hour, global per day; TTL 2 days) | DynamoDB `support-limits-<stage>` |
+| Help documents (source of truth) | `support-kb/` in git → S3 `support-kb-<stage>` |
+| Knowledge base index | Bedrock Managed Knowledge Base (fallback: S3 Vectors) |
+| Evaluation set + results | `support-evals/` in the repo |
 
 ## APIs
-| Interface | Called by | Auth | Purpose |
+| Method + path | Called by | Auth | Purpose |
 |---|---|---|---|
-| WebSocket `wss://.../chat` (`sendMessage`, streamed replies) | Web app | User JWT | Chat with the assistant |
-| `POST /tickets` · `GET /tickets` · `GET /tickets/{id}` | Web app | User JWT | My tickets |
-| `GET /agent/tickets?status=` · `POST /agent/tickets/{id}/reply` · `/close` | Agent console | support_agent | Work tickets |
+| `POST /conversations` · `POST /conversations/{id}/messages` · `GET /conversations/{id}` | Web app | Customer (BFF) | Chat |
+| `GET /tickets` · `GET /tickets/{ticketId}` | Web app | Customer (BFF) | My tickets |
+
+## Tools the assistant can use
+| Tool | Calls | Notes |
+|---|---|---|
+| `search_policies` | Knowledge Base `Retrieve` | Top 4 chunks with sources |
+| `list_my_orders` · `get_order` | Ordering `/internal/...` (IAM) | userId from the token; ownership checked by Ordering |
+| `create_ticket` | Own table | Includes the conversation |
 
 ## Events published
 | Event | When | Key data | Consumers |
 |---|---|---|---|
-| `TicketCreated` / `TicketUpdated` | Ticket changes | ticketId, userId, status | Notifications, Analytics |
-| `AssistantConversationEnded` | Chat ends | conversationId, resolved (yes/no), handedOff, toolsUsed | Analytics |
-
-## Tools the assistant can call (other teams' APIs)
-| Tool | API | Owner |
-|---|---|---|
-| `list_my_orders` | `GET /internal/users/{userId}/orders` | Commerce |
-| `get_order_status` | `GET /internal/orders/{orderId}?userId=` | Commerce |
-| `get_payment_status` | `GET /internal/payments/{orderId}` | Payments |
-| `get_delivery_status` (R3+) | `GET /internal/deliveries/{orderId}` | Logistics |
-| `create_ticket` | own | Customer Experience |
-
-`userId` always comes from the verified chat session, never from the model or the message text.
+| `TicketCreated` | Hand-off | ticketId, userId | Agent console (later), Notifications (later), Analytics |
 
 ## Service levels
 | Measure | Target |
 |---|---|
-| First token | < 3 s |
-| "Where is my order?" solved without a human | > 60% (evaluation set + real chats) |
-| Unsafe / other-user data answers | 0 on the evaluation set |
-| AI cost | Tracked per conversation; hard limits on turns and tokens |
+| Answer latency | < 8 s p95 |
+| Resolved without a ticket | > 60% (evaluation + production metric) |
+| Cost | Hard caps: per user per hour and a global daily cap |
 
 ## Links
 | What | Link |
 |---|---|
-| Repos | Planned (created when development starts) in [bhatvinayaka-store](https://github.com/bhatvinayaka-store): `support-backend`, `support-web`, `support-infra`, `support-evals` · find them with topic `feature-support` |
-| Pipeline | TBD (Customer Experience team pipeline) |
-| Dashboard section | Prod business dashboard -> "Support" |
+| Repos | Planned (created after the design is finalised) in [bhatvinayaka-store](https://github.com/bhatvinayaka-store): `support-backend`, `support-web`, `support-infra` · find them with topic `feature-support` |
+| Pipeline | TBD (sync docs → ingestion → evaluation → deploy) |
+| Decisions | [Design review log §11](../../design-review-log.md#11-support-r2) |
 | Runbook | TBD |
 
 ## Local setup
 1. `docker compose up` -> DynamoDB Local
-2. Bedrock is called in AWS even from local (`aws login --profile <your-profile>`); other teams'
-   APIs are stubbed locally
-3. `pytest` + `python -m evals.run` runs the evaluation set
+2. Run the Spring Boot app against the dev Bedrock model and Knowledge Base, Ordering stubbed (WireMock)
+3. `./gradlew evals` runs the evaluation set
 
 ## Documents
 - [Requirements](requirements.md) · [High-level design](hld.md) · [Decisions](adr/)
