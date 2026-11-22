@@ -5,10 +5,11 @@ STORE-<number>
 <!-- Which documents, and a one-line summary -->
 
 ## Why
-<!-- Story / requirement / review comment this addresses -->
+<!-- Story / requirement / review finding this addresses -->
 
 ## Checklist
-- [ ] PR title starts with the Jira key (`STORE-12: ...`)
-- [ ] Status and change log updated in every changed HLD
-- [ ] No secrets, credentials or real personal data
-- [ ] Links still work
+- [ ] PR title starts with the Jira key (`STORE-12: ...`); **Docs checks** enforces it
+- [ ] Status line and change log (or ADR revision line) updated in every changed document
+- [ ] Review findings that were fixed are recorded in the design review log
+- [ ] No secrets, credentials or real personal data (gitleaks runs in **Docs checks**)
+- [ ] Links still work (`python3 scripts/check-links.py`, also run by **Docs checks**)

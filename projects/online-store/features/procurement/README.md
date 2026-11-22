@@ -6,8 +6,8 @@
 | | |
 |---|---|
 | **Owner team** | Supply |
-| **Status** | HLD draft v0.1 - in review |
-| **Release** | R2 |
+| **Status** | HLD draft v0.2 - in review |
+| **Release** | Later (after R1-R3) |
 | **Stack** | Java (Spring Boot 3 on Lambda + SnapStart), Aurora PostgreSQL (Data API), AWS Step Functions (Standard) |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Supply` · Epic: TBD |
 
@@ -23,8 +23,8 @@
 ## Scope by release
 | Release | In scope |
 |---|---|
-| R2 | Suppliers, reorder rules, planning, PO lifecycle with approval, supplier simulator, goods receipt |
-| R2 (P2) | Stock transfers between stores, supplier performance report |
+| First release | Suppliers, reorder rules, planning, PO lifecycle with approval, supplier simulator, goods receipt |
+| First release (P2) | Stock transfers between stores, supplier performance report |
 | Parking lot | Real supplier integrations (EDI), supplier invoicing and payments, forecasting |
 
 ## Owns (data)

@@ -1,17 +1,17 @@
 # Fulfillment & Delivery - High-Level Design
 
-**Status:** Draft v0.1 - in review · **Owner:** Logistics team · **Last updated:** 2026-11-14
+**Status:** Draft v0.2 - in review (deferred) · **Owner:** Logistics team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults)
 
 ## 1. Summary
 The one feature that deliberately breaks from the serverless default: high-volume, ordered rider
 location data flows through **Kafka**, and long-running stream processors run as containers on
 **Kubernetes (EKS)**. This is where EC2, Docker, Kubernetes and Kafka are learned, as a
-**time-boxed learning stint** (ADR-0010): the cluster and broker exist only while R3 is being
-built and tested.
+**time-boxed learning stint** (ADR-0010): the cluster and broker exist only while Fulfillment is
+being built and tested.
 
 ## 2. Goals and non-goals
-**Goals (R3a):** FUL-02, FUL-05. **(R3b):** FUL-01, FUL-03, FUL-04.
+**Goals (phase A):** FUL-02, FUL-05. **(phase B):** FUL-01, FUL-03, FUL-04.
 **Non-goals:** real rider apps, payroll, traffic-aware re-routing, multi-broker Kafka HA.
 
 ## 3. Context
@@ -26,7 +26,7 @@ built and tested.
                      |                                          |
               DynamoDB fulfillment-<stage>            API Gateway WebSocket ──> customer map
                      |
- Commerce: OrderConfirmed ──> EventBridge ──> SQS ──> delivery creator ─┘
+ Ordering: OrderConfirmed ──> EventBridge ──> SQS ──> delivery creator ─┘
  Route optimiser (Python Lambda, Amazon Location route matrix)
  Events out: RiderAssigned, OrderDispatched, OrderDelivered, DeliveryStatusChanged, StoreCapacityLow
 ```
@@ -51,7 +51,7 @@ built and tested.
 | Rider simulator | Pods that move riders along roads between store and drop-offs and publish every 5 s | Load and realism |
 | Delivery records | DynamoDB | Platform default |
 
-**Dispatch rules (R3b)**
+**Dispatch rules (phase B)**
 1. A delivery becomes assignable when its pick task is done.
 2. Candidates: free riders at the same store within 3 km, or riders with < 3 orders whose route
    still meets every promised time if this stop is added.
@@ -74,14 +74,14 @@ built and tested.
 See the [README](README.md). Design rules:
 - Location messages never leave the cluster; only summaries (statuses, ETA) go on EventBridge.
 - Customers can subscribe to tracking only for their own orders (checked at connect).
-- Delivery statuses flow to Commerce via `DeliveryStatusChanged`; Commerce owns the order timeline.
+- Delivery statuses flow to Ordering via `DeliveryStatusChanged`; Ordering owns the order timeline.
 
 ## 8. Key flows
 **8.1 Order to delivery**
 ```
 OrderConfirmed -> delivery PICKING + pick task -> picker done -> OrderPicked -> READY
  -> dispatch assigns rider (+ optimiser order) -> RiderAssigned -> rider pickup -> OrderDispatched
- -> rider drop-off -> OrderDelivered -> DeliveryStatusChanged(DELIVERED) -> Commerce timeline
+ -> rider drop-off -> OrderDelivered -> DeliveryStatusChanged(DELIVERED) -> Ordering timeline
 ```
 **8.2 Live tracking**
 ```
@@ -119,8 +119,8 @@ dispatch: store has 0 free riders for > 5 min -> StoreCapacityLow -> Store Netwo
 | ECS instead of EKS | Simpler and cheaper, but Kubernetes is the learning goal |
 
 ## 12. Risks and open questions
-1. **R3 is the heaviest release** (Kafka, Kubernetes, EC2, Location Service, WebSockets,
-   optimisation): split into R3a and R3b as above.
+1. **Fulfillment is the heaviest feature** (Kafka, Kubernetes, EC2, Location Service, WebSockets,
+   optimisation): split into phases A and B as above.
 2. Promised time per order: store ETA + 10 min buffer (proposed).
 
 ## Change log
@@ -129,3 +129,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | Date | Change | Why (story / requirement) | Approved |
 |---|---|---|---|
 | 2026-11-14 | v0.1 first draft; serviceability moved to Store Network | Store Network owns stores and zones | Pending review |
+| 2026-11-22 | v0.2: release labels (Later, in phases A and B) and team name (Commerce is now Ordering) updated | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (L-28) | Applied 2026-11-22, for review |

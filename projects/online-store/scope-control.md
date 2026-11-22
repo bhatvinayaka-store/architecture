@@ -5,11 +5,12 @@ learn by building.
 
 ## The main goal
 > Build and operate a production-grade, multi-team quick-commerce platform where a customer in
-> Bengaluru South sees their serving store's catalog, buys safely, pays, and is notified, with
-> every team shipping through its own pipeline (dev -> prod) with dashboards and alarms.
+> Bengaluru South sees their serving store's catalog and buys safely, with every team shipping
+> through its own pipeline (dev -> prod) with dashboards and alarms.
 
-**Release goal (R1):** a customer can sign up, see their store's products, check out, pay and get
-a confirmation email; deployed through pipelines, monitored, alarmed.
+**Release goal (R1):** a customer can see their store's products, sign up and place a cash-on-delivery
+order; deployed through pipelines, monitored, alarmed. (Updated 2026-11-21: payments and emails moved
+to later releases, see the [design review log](design-review-log.md).)
 
 ## Our resolution
 We build what the HLD and LLD describe, and we do not go beyond them on impulse.
@@ -47,8 +48,9 @@ Other teams depend on its APIs and events, so change it **without breaking them*
 2. **Migrate:** consuming teams switch over (one Jira ticket per team).
 3. **Contract:** remove the old version once nobody uses it.
 
-Events: adding fields is always safe; renaming or removing needs a new version. Contract tests
-catch accidental breaks.
+Events and API responses: adding fields is always safe, because every reader ignores fields it
+does not know ([system HLD §4](system-hld.md#4-event-conventions)); renaming or removing needs a new
+version. Contract tests catch accidental breaks.
 
 ## Adding a new feature
 Allowed at any time: add a folder with README, requirements and HLD, and decide its release. If

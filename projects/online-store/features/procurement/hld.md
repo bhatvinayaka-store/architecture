@@ -1,6 +1,6 @@
 # Supply & Procurement - High-Level Design
 
-**Status:** Draft v0.1 - in review · **Owner:** Supply team · **Last updated:** 2026-11-14
+**Status:** Draft v0.2 - in review (deferred) · **Owner:** Supply team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults)
 
 ## 1. Summary
@@ -10,7 +10,7 @@ days for approvals, suppliers and deliveries. It never writes stock: it reports 
 and Inventory applies it (ADR-0008).
 
 ## 2. Goals and non-goals
-**Goals (R2):** PRC-01 to PRC-04. **(P2):** PRC-05, PRC-06.
+**Goals (first Procurement release, in Later):** PRC-01 to PRC-04. **(P2):** PRC-05, PRC-06.
 **Non-goals:** supplier invoices and payments, EDI, forecasting.
 
 ## 3. Context
@@ -72,7 +72,9 @@ Unique partial index: one open PO line per (store_id, product_id).
 ## 7. Interfaces
 See the [README](README.md). Design rules:
 - Only `GoodsReceived` / `StockTransferred` affect stock, and only through Inventory.
-- `GoodsReceived` carries `receiptId`; Inventory de-duplicates on it.
+- `GoodsReceived` carries `receiptId` (Inventory de-duplicates on it) and, per line, `productId`,
+  `qty` and `expiry` as printed on the pack (store-local date or date-time): Inventory creates one
+  batch per line ([Inventory HLD §7](../inventory/hld.md#7-interfaces)).
 - Reorder points are owned here and pushed to Inventory (Inventory only uses them to raise `StockLow`).
 
 ## 8. Key flows
@@ -86,7 +88,8 @@ StockLow{BLR-S-04, milk, available 8, reorderPoint 10}
 ```
 simulator confirms (expectedAt tomorrow 10:00) -> callback -> Confirmed
 delivery arrives -> staff POST receipt {milk: received 58, damaged 2}
- -> receipt stored -> GoodsReceived{milk +58} -> Inventory on hand += 58 -> PO line partially received
+ -> receipt stored -> GoodsReceived{milk +58, expiry 24 Nov} -> Inventory: new batch, on hand += 58
+ -> PO line partially received
 ```
 
 ## 9. Failure handling
@@ -113,7 +116,7 @@ delivery arrives -> staff POST receipt {milk: received 58, damaged 2}
 
 ## 12. Risks and open questions
 1. Approval threshold value (proposed ₹10,000 per PO).
-2. One preferred supplier per product in R2 (proposed), choosing between suppliers later.
+2. One preferred supplier per product in the first Procurement release (proposed), choosing between suppliers later.
 
 ## Change log
 Record every design change here with its reason ([scope control](../../scope-control.md)).
@@ -121,3 +124,4 @@ Record every design change here with its reason ([scope control](../../scope-con
 | Date | Change | Why (story / requirement) | Approved |
 |---|---|---|---|
 | 2026-11-14 | v0.1 first draft | - | Pending review |
+| 2026-11-22 | v0.2: `GoodsReceived` carries an expiry per line (Inventory creates one batch per line); release labels updated | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (L-27, L-28) | Applied 2026-11-22, for review |

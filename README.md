@@ -6,7 +6,7 @@ through pull requests ("docs as code").
 ## Projects
 | Project | Status | Folder |
 |---|---|---|
-| Online Store (ShopLite) | Candidate (under evaluation) - requirements draft | [projects/online-store](projects/online-store/README.md) |
+| Online Store (ShopLite) | Selected - R1 design agreed; round-3 review fixes for review | [projects/online-store](projects/online-store/README.md) |
 
 Other candidates (housing society, school van tracking, clinic queue, tiffin service) can be
 added as one-page `README.md` files under `projects/` with status `proposed` or `rejected`.
@@ -23,7 +23,7 @@ projects/<project>/
     README.md              owner, status, links hub (repos, Jira, pipeline, dashboards), local setup
     requirements.md        user stories + acceptance criteria + NFRs
     hld.md                 feature architecture
-    lld.md                 added when development of the feature starts
+    lld.md                 written just before the feature is built, then kept in sync with the code
     adr/                   feature-level decisions
   platform/                same structure, for the platform team
   data/                    data sources and small seed samples
@@ -48,11 +48,14 @@ All work, including design docs, is tracked on the [STORE Kanban board in Jira](
 4. Resolve comments, merge. `main` always holds the reviewed version.
 
 ## Document statuses
-`Not started` -> `Draft` -> `In review` -> `Approved` -> `Superseded`
+Documents: `Not started` -> `Draft vX.Y` (with a note such as "for review" or "agreed in design
+review") -> `Approved` -> `Superseded`. ADRs: `Proposed` -> `Accepted` (revised <date>) ->
+`Superseded` ([ADR-0001](projects/online-store/adr/0001-record-architecture-decisions.md)).
 
 ## First-time setup
 Run `scripts/install-hooks.sh` once after cloning: it adds a pre-commit hook that blocks
-commits containing secrets (needs `brew install gitleaks`).
+commits containing secrets (needs `brew install gitleaks`). Every PR also runs the **Docs checks**
+workflow: the Jira key in the PR title, the same gitleaks scan, and `python3 scripts/check-links.py`.
 
 ## Rules
 - Never commit secrets, credentials or real personal data. Describe how to get access instead.

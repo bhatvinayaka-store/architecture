@@ -1,6 +1,6 @@
 # Notifications - High-Level Design
 
-**Status:** Draft v0.1 - in review · **Owner:** Engagement team · **Last updated:** 2026-11-14
+**Status:** Draft v0.2 - in review (round-3 fixes and AWS checks 2026-11-22) · **Owner:** Engagement team · **Last updated:** 2026-11-22
 **Requirements:** [requirements.md](requirements.md) · **Builds on:** [system HLD platform defaults](../../system-hld.md#3-platform-defaults)
 
 ## 1. Summary
@@ -9,7 +9,7 @@ SQS queue; a Lambda decides who gets what, renders a template, checks preference
 de-duplication, and sends email through SES.
 
 ## 2. Goals and non-goals
-**Goals (R1):** NTF-01, NTF-02, NTF-04, NTF-05. **(R2/P2):** NTF-03, NTF-06.
+**Goals (R3):** NTF-01, NTF-04, NTF-05; NTF-02 (payment failed) comes with Payments. **(Later, P2):** NTF-03, NTF-06.
 **Non-goals:** SMS, WhatsApp, push, marketing campaigns.
 
 ## 3. Context
@@ -43,10 +43,19 @@ de-duplication, and sends email through SES.
 | Worker | Python Lambda with Powertools (batch processing with partial failures, idempotency utility) | Python is fast to write and starts quickly |
 | Templates | Jinja2 templates in S3, versioned; cached in memory for 5 min | Change wording without redeploying |
 | Email | Amazon SES | Managed email sending; bounce/complaint feedback |
-| Bounces | SES -> SNS topic -> SQS -> feedback Lambda | Standard SES feedback pattern (this is the R1 use of SNS) |
+| Bounces | SES -> SNS topic -> SQS -> feedback Lambda | Standard SES feedback pattern (the first use of SNS) |
 
 **SES sandbox:** new SES setups can only send to verified addresses until production access is
 granted. For a learning project, verifying your own and your friends' emails is enough.
+
+**Sender:** an address on a **project domain** verified in SES with **Easy DKIM**, plus SPF (custom
+MAIL FROM) and a DMARC record, so messages pass DMARC. A personal mailbox (e.g. Gmail) as the From
+address fails DMARC alignment when sent through SES, so mail lands in spam or is rejected. Cost: a
+domain (~$10-15 a year) and a Route 53 hosted zone ($0.50 a month). Checked 2026-11-22: SES is on
+the Free plan and this account is in the sandbox (verified recipients only, 200 emails a day, 1 a
+second); Route 53 refuses domain registration on the Free plan, so the domain is registered with
+another registrar (or after upgrading) and its DNS is hosted in Route 53. Still to check before R3:
+whether production access is granted on the Free plan.
 
 ## 6. Data model
 **DynamoDB `notifications-<stage>`**
@@ -99,13 +108,13 @@ StockLevelChanged {inStock: true} -> query NOTIFYME#store#product -> one email p
 ## 11. Alternatives considered
 | Option | Decision |
 |---|---|
-| SNS fan-out per channel | Not needed with one channel (email) in R1; becomes useful when SMS/push are added |
+| SNS fan-out per channel | Not needed with one channel (email) in R3; becomes useful when SMS/push are added |
 | Each team sends its own emails | Rejected: duplicated code, inconsistent branding, no central preferences |
-| Amazon Pinpoint / End User Messaging | Not needed for email-only R1 |
+| Amazon Pinpoint / End User Messaging | Not needed for email-only R3 |
 
 ## 12. Risks and open questions
-1. Sender domain: SES needs a verified sender identity; without a custom domain, use a verified
-   personal email address as the sender in R1.
+1. ~~Sender domain~~: decided 2026-11-22, a project domain with Easy DKIM and DMARC (§5); a personal
+   mailbox as the sender would fail DMARC. Domain name to choose before R3.
 
 ## Change log
 Record every design change here with its reason ([scope control](../../scope-control.md)).
@@ -113,3 +122,5 @@ Record every design change here with its reason ([scope control](../../scope-con
 | Date | Change | Why (story / requirement) | Approved |
 |---|---|---|---|
 | 2026-11-14 | v0.1 first draft | - | Pending review |
+| 2026-11-22 | v0.2 (round-3 fixes): release labels match the plan (order emails in R3; payment emails with Payments); sender on a project domain with Easy DKIM, SPF and DMARC instead of a personal mailbox | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (M-24, L-28) | Applied 2026-11-22, for review |
+| 2026-11-22 | v0.2 AWS checks: SES works on the Free plan in the sandbox (200 a day, verified recipients); Route 53 cannot register domains on the Free plan, so the domain comes from another registrar | [Design review log §15](../../design-review-log.md#15-aws-checks) | Applied 2026-11-22, for review |
