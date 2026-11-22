@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | **Owner team** | Commerce |
-| **Status** | HLD draft v0.5 - agreed in design review; round-3 fixes 2026-11-22 for review |
+| **Status** | HLD draft v0.6 - agreed in design review; round-3 fixes and checkout decisions (D18) 2026-11-22 for review |
 | **Release** | R1 (browser cart, cash on delivery; built after Identity) · Later (server cart, payment step, cancellation, delivery statuses) |
 | **Stack** | Java (Spring Boot 3 on Lambda + SnapStart), DynamoDB (Streams); Step Functions only when Payments arrives |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Commerce` · Epic: TBD |

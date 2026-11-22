@@ -1,6 +1,6 @@
 # UX Design Rules (customer side)
 
-**Status:** Draft v0.3 - for review (round-3 fixes 2026-11-22) · **Owner:** shared; each section names its owner team · **Last updated:** 2026-11-22
+**Status:** Draft v0.4 - for review (no store names, delivery estimate, checkout rules 2026-11-22) · **Owner:** shared; each section names its owner team · **Last updated:** 2026-11-22
 **Applies to:** every customer screen (shell + team UIs). Staff screens: staff-side design. **Standard:** WCAG 2.2 AA.
 **Builds on:** [ADR-0015](adr/0015-micro-frontends-with-central-shell.md) (shell, `ctx`, `common/ui`) · [design review log §12](design-review-log.md#12-design-review-fixes)
 
@@ -31,7 +31,7 @@
   shows the shell's "Page not found".
 - **Deep links survive the location step:** opening `/p/P-1001` with no active location goes to
   `/location?next=/p/P-1001` and returns there afterwards.
-- **Not sold at your store** (shared link, or the customer moved): a "Not available at your store"
+- **Not available here** (shared link, or the customer moved): a "Not available at your location"
   page with "Browse similar" (its category) and "Change location", never a blank page.
 - Every route change calls `ctx.setTitle(...)` ("Milk · ShopLite"): the page title updates and
   focus moves to the page heading, so screen-reader users hear where they are.
@@ -41,7 +41,7 @@
 It is step 1 of every order, so it must work for everyone.
 
 1. **Use my current location** (primary button). The browser permission is asked only when
-   pressed, with the reason ("to find the store that delivers to you"). Denied or unavailable →
+   pressed, with the reason ("to check that we deliver to you"). Denied or unavailable →
    a message, and the other options stay.
 2. **Saved addresses** (signed in): one tap each.
 3. **Map:** tap to place the pin or drag it. Keyboard: the map is one focusable element
@@ -49,15 +49,14 @@ It is step 1 of every order, so it must work for everyone.
    location"), so arrow keys pan the map under a fixed centre pin without fighting screen-reader
    browse keys; "Use this location" confirms. Zoom buttons have labels. Options 1 and 2 always work
    without the map.
-4. **Result in words:** "Delivering from Koramangala store, 1.2 km away" (`storeName` and
-   `distanceM` of the serving store), announced in a polite live region. If a nearer store is closed
-   now: "Delivering from HSR store, 3.8 km away. Koramangala store (1.2 km) opens at 7:00 AM." Not
-   served → "We don't deliver here yet. Try another address". No store open now → §4.
+4. **Result in words:** "We deliver here · about 10–15 min" (the delivery estimate from
+   serviceability), announced in a polite live region. Store names and distances are never shown
+   (D17). Not served → "We don't deliver here yet. Try another address". No store open now → §4.
 
 - The map (Leaflet + OpenStreetMap tiles) loads only when the picker opens; OSM attribution shown.
 - No address search (geocoding) in R1 ([parking lot](parking-lot.md)).
-- The header shows the active location ("Delivering to Home · Koramangala") as a button that
-  opens the picker.
+- The header shows the active location and the estimate ("Delivering to Home · about 10–15 min";
+  nothing open: "Delivering to Home · from 7:00 AM") as a button that opens the picker.
 
 ## 4. State matrix
 Every data view handles these states; wording comes from the copy deck (§6).
@@ -68,9 +67,9 @@ Every data view handles these states; wording comes from the copy deck (§6).
 | Empty (empty cart, no orders) | A plain message and the next step | "Start shopping" |
 | Error | A human message, no codes | Retry |
 | Section failed to load (team bundle) | "This section didn't load." The rest of the page works | Retry |
-| Store closed now (`OUTSIDE_HOURS`: no store in range is open now) | Banner "Closed now. Opens at 7:00 AM" | Browsing and adding to cart allowed; Place order disabled with that reason |
-| Store paused, no other store open nearby (`PAUSED`) | Banner "Not taking orders right now" | Browsing allowed; checkout disabled |
-| Store changed (the cart's store closed for the day, paused or shut down while another store in range is open now) | Banner "Now delivering from HSR store. Some prices or items may differ." | "Review cart"; the cart moved with flagged lines (ORD-02) and does not move back when the first store reopens |
+| Store closed now (`OUTSIDE_HOURS`: no store in range is open now) | Banner "Temporarily closed · Delivery from 7:00 AM" (the catalog of the store that opens soonest, D16) | Browsing and adding to cart allowed; Place order disabled with that reason |
+| Store paused, no other store open nearby (`PAUSED`) | Banner "Temporarily closed. Please check back soon." | Browsing allowed; checkout disabled |
+| Store changed (the cart's store closed for the day, paused or shut down while another store in range is open now) | Banner "Delivery time updated: about 20–25 min. Some items or prices have changed." | "Review cart"; the cart moved, missing items shown as "Out of stock" (ORD-02) and does not move back when the first store reopens |
 | Not served | "We don't deliver here yet" | "Try another address" |
 | Out of stock | Shown in place: **only the product image is dimmed**; name, price and the "Out of stock" label keep full text contrast (≥ 4.5:1); the Add button is replaced by the label (never colour alone) | - (notify-me later) |
 | Few left | "Only 2 left" | The stepper stops at the cap |
@@ -98,6 +97,10 @@ in `common/ui`).
 - **A 409** shows a banner at the top of checkout with `role="alert"` and focus moved to it. It lists
   what changed (from the 409 body) and offers one action ("Update cart", "Confirm new total
   ₹312", "Change address"). An error never empties the cart.
+- **Out-of-stock lines at checkout** (D18): they stay in the list with the label "Out of stock"
+  (image dimmed, text keeps 4.5:1) and are left out of the total; "Remove out-of-stock items" clears
+  them in one tap; Place order sends only the available lines. If another store serves the address
+  now, the preview has already moved the cart and checked the lines there.
 - Quantity stepper buttons are labelled "Decrease quantity of Nandini Milk" / "Increase …"; the
   new quantity is announced; targets are 44×44 px.
 
@@ -139,11 +142,11 @@ each team owns the rows for its codes. Raw codes, IDs and stack traces are never
 | Code / event | Message | Action |
 |---|---|---|
 | `TOTAL_CHANGED` | "Your total changed from ₹298 to ₹312. Nandini Milk: ₹26 → ₹28." | "Confirm new total" |
-| `OUT_OF_STOCK` | "Only 1 Nandini Curd left. We've updated your cart." | "Review cart" |
-| `ITEM_UNAVAILABLE` | "Brown Bread is no longer available at your store." | "Remove and continue" |
-| `STORE_CHANGED` | "Now delivering from HSR store. Some prices or items may differ." | "Review cart" |
-| `STORE_UNAVAILABLE` (`OUTSIDE_HOURS`) | "The store is closed now. It opens at 7:00 AM. Your cart is saved." | - (Place order disabled until then) |
-| `STORE_UNAVAILABLE` (`PAUSED`) | "The store isn't taking orders right now." | "Try another address" |
+| `OUT_OF_STOCK` | "Nandini Curd is out of stock." / "Only 1 Nandini Curd left. We've updated your cart." | "Review cart" |
+| `ITEM_UNAVAILABLE` | "Brown Bread is out of stock." (same words as `OUT_OF_STOCK`: customers don't see stores) | "Remove out-of-stock items" |
+| `STORE_CHANGED` | "Delivery time updated: about 20–25 min. Some items or prices have changed." | "Review cart" |
+| `STORE_UNAVAILABLE` (`OUTSIDE_HOURS`) | "We're closed right now. Delivery from 7:00 AM. Your cart is saved." | - (Place order disabled until then) |
+| `STORE_UNAVAILABLE` (`PAUSED`) | "Temporarily closed. Please check back soon." | "Try another address" |
 | `STORE_UNAVAILABLE` (`NOT_SERVED`) | "We don't deliver to this address right now." | "Change address" |
 | `LIMIT_EXCEEDED` | "You can order up to 3 of this item." / "Up to 35 different items per order." | - |
 | `BUSY`, `TRY_AGAIN`, `UPSTREAM_UNAVAILABLE` | "Something went wrong on our side. Your cart is safe." | "Try again" |
@@ -159,7 +162,8 @@ each team owns the rows for its codes. Raw codes, IDs and stack traces are never
 - The confirmation page (`/orders/<orderId>`) shows the order summary and "Cash on delivery: ₹312".
 - **What happens next**, on the order page: "Pay ₹312 in cash when your order arrives. Orders can't
   be cancelled once placed. Something wrong? Need help?" The link opens `/help?order=<orderId>`.
-  No delivery time is promised in R1 (no delivery tracking until Fulfillment).
+  No live delivery tracking in R1 (until Fulfillment); the delivery estimate is shown before ordering
+  (header, checkout), not on the order page.
 - For 30 s after placing, the page re-fetches the order every 5 s, so an adjustment from the
   commit (ORD-10) shows up quickly; after that, only on page load.
 - An adjusted order has an "Adjusted" label in history and on the order page, with what was removed
@@ -236,3 +240,4 @@ and orders can't be cancelled.
 | 2026-11-21 | v0.1 first version | UI/UX and front-end review findings ([log §12](design-review-log.md#12-design-review-fixes)) | For review |
 | 2026-11-21 | v0.2 (round-2 fixes): R1 static help page and "what happens next" on the order page; checkout address step (fields, order, validation, saved address, someone else); `STORE_UNAVAILABLE` copy for `OUTSIDE_HOURS` / `PAUSED` / `CLOSED`; client timeouts; deep links; cart-unavailable state; sign-out clears the device cart with a confirmation | [Design review log §13](design-review-log.md#13-design-review-fixes-round-2) (UX-8, UX-9, UX-11, BE-12, FE-8, FE-10, FE-14) | For review |
 | 2026-11-22 | v0.3 (round-3 fixes): store changes follow the one-store-per-order choice rule (backup store shown in words, `STORE_CHANGED` names the new store, `NOT_SERVED` replaces `CLOSED`); out-of-stock dims only the image (text keeps 4.5:1); address form matches Identity (`line1`, `line2`, `area`, city from the store); phone normalisation; toast timing; "Still loading…" at 5 s; map keyboard mode labelled; 429 copy; help mailbox marked as a placeholder | [Design review log §14](design-review-log.md#14-design-review-fixes-round-3) (D11, M-2, M-12, M-21, L-23, L-24, L-25, L-26) | For review |
+| 2026-11-22 | v0.4: no store names or distances anywhere; delivery estimate in the location result and header; nothing open → the store that opens soonest ("Temporarily closed · Delivery from 7:00 AM"); one "Out of stock" message for no stock and not sold; out-of-stock lines left out at checkout so the rest can be ordered | [Design review log §16](design-review-log.md#16-catalog-lld-walkthrough-and-customer-store-decisions) (D16-D18) | For review |

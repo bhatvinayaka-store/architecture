@@ -109,14 +109,14 @@ the [design review log](design-review-log.md); review fixes are in [§12](design
 
 | # | Feature | HLD status |
 |---|---|---|
-| 1 | Catalog & Search | **HLD v0.6 - agreed** (round-3 fixes for review) · LLD v0.4 for review |
-| 1 | Store Network & Serviceability | **Draft v0.6 - agreed** (round-3 fixes for review: one store per order with backups, 4.5 km cap) |
+| 1 | Catalog & Search | **HLD v0.6 - agreed** (round-3 fixes for review) · LLD v0.5 for review (walkthrough fixes) |
+| 1 | Store Network & Serviceability | **Draft v0.6 - agreed** (round-3 fixes for review: one store per order with backups, 4.5 km cap) · v0.7: soonest-opening store, delivery estimate, no store names (D16, D17) |
 | 2 | Inventory | **Draft v0.5 - agreed** (round-3 fixes for review) |
 | 3 | Identity & Accounts | **Draft v0.5 - customer side agreed** (round-3 fixes for review); staff side after R1 |
-| 4 | Cart & Checkout | **Draft v0.5 - agreed** (round-3 fixes for review) |
+| 4 | Cart & Checkout | **Draft v0.6 - agreed** (round-3 fixes and checkout decisions D18 for review) |
 | 5 | Customer Support & AI Assistant | **Draft v0.4 - agreed** (round-3 fixes for review; Bedrock checked: Claude through the `au.` profile, D15) |
 | 6 | Notifications | Draft v0.2 - in review (sender domain decided) |
-| - | Customer UX rules (URLs, states, location picker, copy, accessibility) | [UX design](ux-design.md) v0.3 for review; wireframes still to do |
+| - | Customer UX rules (URLs, states, location picker, copy, accessibility) | [UX design](ux-design.md) v0.4 for review (no store names; delivery estimate); wireframes still to do |
 | - | Staff side (staff pool + roles, admin screens, agent console) | **After R1** ([D10](design-review-log.md#14-design-review-fixes-round-3)); R1 uses IAM-signed operator scripts and the `system-operator` actor |
 | - | Payments, Procurement, Fulfillment, Analytics | Draft v0.2 - deferred (release labels updated) |
 | - | Platform | Draft v0.1 - not needed for now (unchanged) |

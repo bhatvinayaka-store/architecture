@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | **Owner team** | Catalog |
-| **Status** | HLD v0.6 agreed, round-3 fixes 2026-11-22 for review · LLD v0.4 for review |
+| **Status** | HLD v0.6 agreed, round-3 fixes 2026-11-22 for review · LLD v0.5 for review |
 | **Release** | R1 (browse, product pages, admin API for operator scripts, images, city prices, listings) · Later (search, staff screens) |
 | **Stack** | Java (Spring Boot 3 on Lambda + SnapStart), DynamoDB (2 tables), S3 + CloudFront (images + 60 s browse cache) |
 | **Jira** | [STORE board](https://bhatvinayaka312.atlassian.net/jira/software/projects/STORE/boards/2) · Component `Catalog` · Epic: TBD |

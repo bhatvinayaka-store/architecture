@@ -1,7 +1,7 @@
 # Catalog & Search - Low-Level Design
 
-**Status:** Draft v0.4 - for review (round-3 fixes and AWS checks 2026-11-22) · **Owner:** Catalog team · **Last updated:** 2026-11-22
-**Builds on:** [HLD v0.5](hld.md) · **Scope:** R1 (everything except search) · Kept in sync with the code ([scope control](../../scope-control.md))
+**Status:** Draft v0.5 - for review (walkthrough fixes 2026-11-22) · **Owner:** Catalog team · **Last updated:** 2026-11-22
+**Builds on:** [HLD v0.6](hld.md) · **Scope:** R1 (everything except search) · Kept in sync with the code ([scope control](../../scope-control.md))
 
 ## 0. Conventions
 | Topic | Rule |
@@ -46,7 +46,7 @@ com.shoplite.catalog
 | `catalog-public-api` | HTTP API (public routes) | `public` (read-only role) | 1024 MB / 10 s, SnapStart |
 | `catalog-admin-api` | HTTP API (`/admin/*`) | `admin` | 1024 MB / 29 s, SnapStart |
 | `catalog-internal-api` | HTTP API (`/internal/*`, IAM) | `internal` (read-only role) | 1024 MB / 10 s, SnapStart |
-| `catalog-events-consumer` | SQS `catalog-inbound` (batch 10) | `worker` | 512 MB / 30 s |
+| `catalog-events-consumer` | SQS `catalog-inbound` (batch 10): stock and store events, and Catalog's own `ProductUpdated` when `subcategoryId` or `status` changed | `worker` | 512 MB / 30 s |
 | `catalog-stream-publisher` | DynamoDB Streams (both tables) | `worker` | 512 MB / 30 s |
 | `catalog-thumbnail` | S3 `ObjectCreated` on `originals/` | `worker` | 1536 MB / 60 s |
 | `catalog-count-rebuild` | EventBridge Scheduler, nightly 03:30 IST | `worker` | 512 MB / 300 s |
@@ -95,13 +95,13 @@ Example items:
 
 | Item | pk | sk | Attributes (type) |
 |---|---|---|---|
-| Listing | `BLR-S-01` | `PRODUCT#P-1001` | productId (S), listed (BOOL), sortRank (N 1-9999), categoryId (S), subcategoryId (S), maxPerOrder (N 1-50), stockStatus (S `IN`/`FEW`/`OUT`, starts `OUT`), availableQty (N, only when `FEW`), stockAt (S), listedAt, updatedAt, version (N); `storeCategory` + `subcategoryRank` **only while listed** |
+| Listing | `BLR-S-01` | `PRODUCT#P-1001` | productId (S), listed (BOOL), sortRank (N 1-9999), categoryId (S), subcategoryId (S), maxPerOrder (N 1-50), stockStatus (S `IN`/`FEW`/`OUT`, starts `OUT`), availableQty (N, only when `FEW`), stockAt (S), productActive (BOOL, copy of the product's status, so a repeated status event never changes the counts twice), listedAt, updatedAt, version (N); `storeCategory` + `subcategoryRank` **only while listed** |
 | Category count | `BLR-S-01` | `COUNT#dairy` / `COUNT#dairy#milk` | productCount (N) |
 | Store copy | `BLR-S-01` | `STORE` | status (S), city (S), name (S), eventAt (S) |
 
 Counts include listed **and active** products, whatever their stock. They are used only to hide
 empty categories, never shown as exact numbers. A product's status change adjusts the counts of every
-store listing it (stream handler, Query `byProduct`, like a subcategory move in 5.3), and a **nightly
+store listing it (the events consumer, on Catalog's own `ProductUpdated`; Query `byProduct`, like a subcategory move in 5.3), and a **nightly
 count rebuild** per store (`catalog-count-rebuild`) recomputes every `COUNT#` item from the listings
 and fixes drift (metric `CountCorrected`).
 
@@ -109,9 +109,9 @@ and fixes drift (metric `CountCorrected`).
 | # | Pattern | Operation | Reads (approx.) |
 |---|---|---|---|
 | A1 | Category menu | Query listings `pk = :store AND begins_with(sk, "COUNT#")` + cached category tree | 1 small query |
-| A2 | Browse a category / subcategory | Query `byStoreCategory` `storeCategory = :sc [AND begins_with(subcategoryRank, :sub#)]`, `Limit 20` → BatchGet 20 `META` + 20 `PRICE#<city>` | ~1 + 20 RRU |
+| A2 | Browse a category / subcategory | Query `byStoreCategory` `storeCategory = :sc [AND begins_with(subcategoryRank, :sub#)]`, `Limit 20` + GetItem `STORE` (visibility, §3.1) → BatchGet 20 `META` + 20 `PRICE#<city>` | ~1.5 + 20 RRU |
 | A3 | All products of a store | Query listings `begins_with(sk, "PRODUCT#")`, filter `listed = true` → BatchGet | ~ A2 |
-| A4 | Products by ids (≤ 35) | BatchGet listings + `META` + `PRICE#<city>` (≤ 105 keys, split into 100-key batches) | ~ 1 per item |
+| A4 | Products by ids (≤ 35) | BatchGet `STORE` + listings + `META` + `PRICE#<city>` (≤ 106 keys, split into 100-key batches) | ~ 1 per item |
 | A5 | Product page | BatchGet listing + `STORE` + `META` + `DETAIL` + `PRICE#<city>` | ~5 RRU |
 | A6 | Internal prices | Same as A4 with `ConsistentRead = true` | ~2 per item |
 | A7 | Admin product list | Query `byCategory` `categoryKey = :ck` | small |
@@ -155,6 +155,11 @@ returns it; the UI skips the subcategory tabs ([§2.4](#24-category-rules)). `40
 ```
 `subcategory` requires `category` (400). Inactive products and products without a city price are
 dropped, so a page can hold fewer than `limit` items.
+
+Every products route (by category or by `ids`) also reads the store copy: `404 STORE_NOT_FOUND`
+if it is missing, `SETUP` or `CLOSED`. The store ID comes from the browser (a saved location or a
+shared link), so it can point to a store that has shut or not launched. Catalog only refuses those;
+choosing the serving store, opening hours included, stays with Store Network.
 
 **`GET /stores/{storeId}/products?ids=P-1001,P-1002`** → 200 `{ "items": [...], "unavailable": ["P-1002"] }`
 Max 35 ids, **sorted ascending and without duplicates**, each matching `^P-\d{4,10}$` (400 otherwise, before any read); not combinable with `category` (400). Sorted ids let identical carts share cache entries, and rejecting other orders stops junk from filling the cache.
@@ -204,7 +209,7 @@ All events use the [system envelope](../../system-hld.md#4-event-conventions); J
 | Event (`detail-type`) | Emitted when (stream mapper) | `data` |
 |---|---|---|
 | `ProductCreated` v1 | `META` inserted | `{productId, sku, name, brand, categoryId, subcategoryId, status, mrpPaise}` |
-| `ProductUpdated` v1 | `META` or `DETAIL` modified | `{productId, changedFields: [...], ...current card fields}` |
+| `ProductUpdated` v1 | `META` modified (a `DETAIL` change always bumps `META.version` in the same transaction, so one edit gives one event; when only `version`/`updatedAt` changed, `changedFields: ["detail"]`) | `{productId, changedFields: [...], ...current card fields}` |
 | `PriceChanged` v1 | `PRICE#<city>` inserted/modified | `{productId, city, oldPricePaise, newPricePaise}` |
 | `AssortmentChanged` v1 | Listing `listed` false→true / true→false (grouped per store per stream batch; a product changed twice in one batch appears once, in its final state) | `{storeId, added: [{productId, categoryId, subcategoryId, maxPerOrder, listingVersion}], removed: [productId]}` |
 | `ListingUpdated` v1 | `maxPerOrder` changed on a listed row | `{storeId, productId, maxPerOrder, listingVersion}`: the listing's `version`, so Inventory keeps only a newer value (SQS can deliver two quick changes out of order) |
@@ -217,6 +222,7 @@ The mapper **ignores** changes to `stockStatus`/`availableQty` (badge updates mu
 |---|---|
 | `StockLevelChanged {storeId, productId, status, availableQty?, occurredAt, reason?}` | `UpdateItem` listing `SET stockStatus, availableQty (or REMOVE), stockAt = :occurredAt` `CONDITION attribute_exists(pk) AND (attribute_not_exists(stockAt) OR stockAt < :occurredAt)`; condition failure = stale, counted and dropped. `reason: RECONCILE` (Inventory's nightly job) uses `ReturnValues: UPDATED_OLD`; if `stockStatus` changed, it counts `BadgeCorrected` (an earlier event was lost) |
 | `StoreCreated` / `StoreUpdated` / `StoreStatusChanged` | `PutItem` store copy `CONDITION attribute_not_exists(eventAt) OR eventAt < :occurredAt`. Store Network re-sends every store nightly (`StoreUpdated`, `reason: RECONCILE`), which repairs a missed event |
+| `ProductUpdated` (Catalog's own; rule: `source = catalog` and `changedFields` contains `subcategoryId` or `status`) | `CategoryMoveHandler`: a move as in §5.3; a status change → per listing of the product (Query `byProduct`), one transaction: `SET productActive = :new` `CONDITION productActive <> :new` + `ADD ±1` on both `COUNT#` items, only for listed rows; duplicates fail the condition and are skipped |
 
 ## 5. Detailed flows
 **5.1 Create a product**
@@ -241,7 +247,8 @@ PUT /admin/stores/BLR-S-01/products/P-1001 {listed: true, sortRank: 5, maxPerOrd
       ConditionCheck META CONDITION version = :readVersion AND #status = ACTIVE
           (a parallel subcategory move or deactivation cancels the write; retried from step 1)
       Update listing SET listed = true, sortRank, maxPerOrder, categoryId, subcategoryId,
-             storeCategory = "BLR-S-01#dairy", subcategoryRank = "milk#0005#P-1001", stockStatus = if_not_exists(OUT)
+             storeCategory = "BLR-S-01#dairy", subcategoryRank = "milk#0005#P-1001", productActive = true,
+             stockStatus = if_not_exists(OUT)
              CONDITION attribute_not_exists(listed) OR listed = false
       Update COUNT#dairy ADD productCount 1 · Update COUNT#dairy#milk ADD productCount 1
     already listed (condition fails) -> plain update of sortRank / maxPerOrder (no count change)
@@ -254,7 +261,7 @@ items by subcategory and processes groups in parallel (concurrency 8), items wit
 **5.3 Move a product to another subcategory** (rare)
 ```
 PATCH META {subcategoryId: "flavoured-milk"} -> stream -> ProductUpdated (changedFields has subcategoryId)
- -> CategoryMoveHandler: Query byProduct (all stores) -> per listed row, one transaction:
+ -> EventBridge rule -> catalog-inbound -> CategoryMoveHandler (events consumer; retries and DLQ as for any event): Query byProduct (all stores) -> per listed row, one transaction:
     update GSI keys CONDITION subcategoryId = :old (rows already moved are skipped) + both count pairs
  -> the nightly count rebuild (§2.2) fixes any count the handler missed
 ```
@@ -293,7 +300,7 @@ deleted a day later, so the bucket holds only current images (plus a day of repl
 | Public routes | No auth; CloudFront in front; API Gateway route throttling **20 req/s (burst 40) in prod**; `dev` the same, raised to 300 req/s (burst 600) only during a load test (CDK context value) |
 | Admin routes | **R1: IAM authorizer in every stage.** Only the operator calls them, with their own AWS credentials (`aws login`) through the `catalog-data` scripts; throttled at 10 req/s (burst 20); never unauthenticated (D10). Later: JWT authorizer on the staff pool + role check |
 | Internal routes | IAM authorizer; only Ordering's Lambda role is granted `execute-api:Invoke` on `POST /internal/prices` |
-| IAM (per function) | public & internal: `dynamodb:GetItem, Query, BatchGetItem` on both tables + indexes · admin: + `PutItem, UpdateItem, ConditionCheckItem` (transactions), `s3:PutObject` on `originals/*` (for presigning) · consumer: `UpdateItem, PutItem` on listings, SQS receive/delete · publisher: stream read, `events:PutEvents` on `shop-<stage>` only · thumbnail: `s3:GetObject originals/*`, `s3:PutObject thumbs/*`, `s3:PutObjectTagging` and `s3:DeleteObject` on `originals/*, thumbs/*`, `UpdateItem` products · count rebuild: `Query` + `UpdateItem` on listings · images bucket: lifecycle rule deletes objects tagged `replaced=true` after 1 day |
+| IAM (per function) | public & internal: `dynamodb:GetItem, Query, BatchGetItem` on both tables + indexes · admin: + `PutItem, UpdateItem, ConditionCheckItem` (transactions), `s3:PutObject` on `originals/*` (for presigning) · consumer: `UpdateItem, PutItem, ConditionCheckItem` on listings (also inside transactions), `Query` on the `byProduct` index, SQS receive/delete · publisher: stream read, `events:PutEvents` on `shop-<stage>` only · thumbnail: `s3:GetObject originals/*`, `s3:PutObject thumbs/*`, `s3:PutObjectTagging` and `s3:DeleteObject` on `originals/*, thumbs/*`, `UpdateItem` products · count rebuild: `Query` + `UpdateItem` on listings, `BatchGetItem` on products (counts need each product's status; it also corrects `productActive`) · images bucket: lifecycle rule deletes objects tagged `replaced=true` after 1 day |
 | Input validation | Bean Validation on every DTO; ID patterns (`^P-\d{4,10}$`, `^[A-Z]{3}-[A-Z]-\d{2,3}$`: up to 999 stores per city zone); body ≤ 64 KB; unknown fields rejected; cursors checked against the request |
 | Images bucket | Block public access, bucket-owner-enforced, SSE-S3, TLS-only policy; Catalog's own CloudFront distribution reads **only `thumbs/*`** through origin access control; `originals/` never public; presigned POST limits size and content type |
 | Data | No personal data in Catalog |
@@ -328,14 +335,14 @@ Cost of a 10-minute load test: ~800 K read units ≈ $0.11 at $0.1425 per millio
 | Contract | `openapi.yaml` validated in the build; emitted events validated against `common/contracts` schemas; Ordering's expectations of `/internal/prices` as a contract test |
 | Security | Admin routes reject unsigned requests (IAM) now, and missing/invalid tokens once staff auth exists; oversized bodies; bad IDs; SVG/fake images and oversized image headers rejected; forged cursors, other `limit` values and unsorted `ids` → 400 without a DynamoDB read |
 | Load | k6: 300 req/s browse mix for 10 min in dev (throttle raised for the test only); p99 and error targets |
-| Smoke (after each deploy) | Create category → product → price → list in BLR-S-01 → browse returns it → unlist |
+| Smoke (pre-traffic hook) | **dev:** create category → product → price → list in the test store `BLR-S-99` (dev seed, always `SETUP`, so never visible) → admin and internal reads return it → unlist. **prod: read-only:** categories and a seed product page in BLR-S-01, internal prices for a seed product, `GET /admin/products/{seed}` (IAM). A test never writes prod data: categories and products are never deleted, and a listing in an open store is seen by customers |
 
 ## 11. Rollout and migration
 - Deploy order ([ADR-0014](../../adr/0014-common-repo-for-shared-infrastructure.md)): `common`
   foundation (event bus) → Store Network (store events) → `catalog-infra` data stack → service stack
   (publishes its SSM outputs) → seed data from `catalog-data` → `common` edge (adds `/api/catalog/*`
   and `/mfe/catalog/*` now that the SSM parameters exist).
-- Lambda aliases with CodeDeploy: a **pre-traffic hook runs the smoke test** against the new version
+- Lambda aliases with CodeDeploy: a **pre-traffic hook runs the smoke test** (read-only in prod, §10) against the new version
   before traffic moves, then all traffic shifts at once (at R1 traffic a 10% canary would see almost no
   requests and prove nothing); rollback on hook failure or on alarms in the next 10 minutes.
 - Schema changes are additive (new attributes, new GSIs); removals follow expand → migrate → contract.
@@ -360,3 +367,4 @@ stack and the BFF route map).
 | 2026-11-21 | v0.3 (round-2 fixes): customer and staff UI as separate bundles (admin code never shipped to customers; scripts until the staff pool); deploy order with the `common` foundation and edge stacks; UI bucket in SSM; `BadgeCorrected` metric and alarm for Inventory's reconciliation | [Design review log §13](../../design-review-log.md#13-design-review-fixes-round-2) (FE-12, BE-11, BE-7) | For review |
 | 2026-11-22 | v0.4 (round-3 fixes): prod throttling 20 req/s per public route; fixed `limit` values, HMAC-signed cursors and sorted `ids` validated before any read; hourly read-units alarm; create-product idempotency race closed (`IDEMP#` condition in the transaction); list transaction checks `META`; move handler conditioned; counts = listed and active products, nightly rebuild (`CountCorrected`); `ListingUpdated`/`AssortmentChanged` carry `listingVersion`; 404 details for "Browse similar"; store copy repaired by Store Network's nightly re-send; product ETag = `META` version; replaced images deleted after a day; image size checked from the header; pack size as `netQty` + `netUnit`; no `storeStatus` in internal prices; store ID pattern; metrics budget; pre-traffic smoke hook; admin API for operator scripts in every stage (D10); tolerant reader | [Design review log §14](../../design-review-log.md#14-design-review-fixes-round-3) (H-1, H-2, M-3, M-5, M-6, M-7, M-8, M-10, M-16, M-17, L-1 to L-9) | For review |
 | 2026-11-22 | v0.4 AWS checks: the account's Lambda limit was 10, so the load test waits for the requested increase (D14); load-test read cost $0.11 at the Sydney price; prod worst case confirmed | [Design review log §15](../../design-review-log.md#15-aws-checks) | Applied 2026-11-22, for review |
+| 2026-11-22 | v0.5 (walkthrough fixes): products routes refuse `SETUP`/`CLOSED` stores (store copy read); prod smoke test read-only, full write test in `dev` in the hidden store `BLR-S-99`; subcategory moves and status-change counts run in the events consumer on Catalog's own `ProductUpdated` (publisher stays publish-only), made idempotent with `productActive`; count rebuild may read products; one `ProductUpdated` per edit; header points to HLD v0.6 | [log §16](../../design-review-log.md#16-catalog-lld-walkthrough-and-customer-store-decisions) | Applied 2026-11-22, for review |

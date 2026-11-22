@@ -1,6 +1,6 @@
 # Online Store - System High-Level Design
 
-**Status:** Draft v0.7 - R1 (Catalog, Stores, Inventory, Identity customer side, Ordering) and Support agreed in design review; round-3 fixes and AWS checks 2026-11-22 for review; Notifications to review; staff side after R1 · **Last updated:** 2026-11-22
+**Status:** Draft v0.7 - R1 (Catalog, Stores, Inventory, Identity customer side, Ordering) and Support agreed in design review; round-3 fixes, AWS checks and D16-D18 2026-11-22 for review; Notifications to review; staff side after R1 · **Last updated:** 2026-11-22
 
 How all features fit together, and the **defaults** every feature HLD builds on. Feature HLDs only
 describe where they differ. Decisions and their reasons: [design review log](design-review-log.md).
@@ -130,7 +130,9 @@ App: delivery location (current location, saved address or map pin: lat/lng)
   -> Store Network: POST /serviceability {lat, lng, keepStoreId?} -> geohash5 cell + 8 neighbours
      -> every store in range (radius <= 4.5 km in Bengaluru), nearest first, with status and opening hours
      -> serving store: the nearest store open now; keepStoreId (the cart's store) is kept while it is open now
-        (else "Opens at 7:00 AM" / "temporarily unavailable" / "not served"); one store per order
+        (none open now: the OPEN store that opens soonest, "Temporarily closed · Delivery from 7:00 AM";
+        else "Temporarily closed" / "not served"); one store per order; customers see only a delivery
+        estimate ("about 10–15 min"), never store names or distances (D16, D17)
   -> Catalog: GET /stores/{storeId}/products  (city price, badge, maxPerOrder)
   -> active location {pin, storeId, city} + cart kept in the browser; checkout re-checks the cart's store with the same rule
 ```
@@ -250,3 +252,4 @@ Resolved: Spring Boot on Lambda (ADR-0016); Cart and Checkout are one feature; c
 | 2026-11-21 | v0.6 (round-2 fixes): outbox publishers retry until success and keep records 24 h, with a replay runbook and repair paths; restore runbook (Streams, mappings, TTL, PITR, IAM, alarms, reconciliation); short-lived tables exempt from PITR; sessions hold name and email; React per team; deep links through a CloudFront Function; `common` split into foundation and edge stacks; verify list updated | [Design review log §13](design-review-log.md#13-design-review-fixes-round-2) (BE-7, DB-7, DB-9, FE-8, FE-9, BE-11, BE-8) | Applied 2026-11-21, for review |
 | 2026-11-22 | v0.7 (round-3 fixes): R1 operator scripts with IAM admin routes in every stage and the `system-operator` actor (D10); one store per order with backups and one choice rule (D11); prod throttling of 20 req/s with validated cache keys and a read-cost alarm; metrics rule and cost lines (R1 ~$10-18/month); tolerant readers; replays name their target rules; pre-traffic smoke hook instead of a canary; chat copied into a ticket follows ticket retention; Inventory has five tables; staff side after R1 | [Design review log §14](design-review-log.md#14-design-review-fixes-round-3) (D10, D11, H-1, H-2, M-1, M-10, M-11, M-16, M-17, L-18) | Applied 2026-11-22, for review |
 | 2026-11-22 | v0.7 AWS checks: the AI row now says Claude goes through the `au.` inference profile (D15); replay targets and `replay-name` confirmed; Free plan end and Sydney prices in §7 (Cognito ~$0-1); §9 item 5 updated with this account's Lambda limit of 10 and the requested increase (D14) | [Design review log §15](design-review-log.md#15-aws-checks) (D14, D15) | Applied 2026-11-22, for review |
+| 2026-11-22 | v0.7: serviceability flow updated: nothing open now → the store that opens soonest; delivery estimate instead of store names (checkout rules in the Ordering HLD) | [Design review log §16](design-review-log.md#16-catalog-lld-walkthrough-and-customer-store-decisions) (D16-D18) | Applied 2026-11-22, for review |
